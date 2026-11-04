@@ -62,7 +62,7 @@ export function Navbar() {
   const roleLabel = user ? ROLE_LABEL[user.role] : '';
 
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
+    <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md no-print">
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-3.5 sm:px-6">
         <div className="flex items-center gap-4 sm:gap-8 min-w-0">
           <Link href="/" className="group flex shrink-0 items-center gap-2" aria-label="SeatLock home">

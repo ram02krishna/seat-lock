@@ -52,6 +52,7 @@ function CheckoutContent() {
     queryKey: ['auth', 'me'],
     queryFn: () => apiFetch('/api/auth/me'),
     retry: false,
+    staleTime: 5 * 60 * 1000,
   });
   const user = authData?.user;
 

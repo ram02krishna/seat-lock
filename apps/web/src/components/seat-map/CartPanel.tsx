@@ -35,6 +35,7 @@ export function CartPanel({ eventId, showId, showStartsAt, onHoldSuccess, onRele
     queryKey: ['auth', 'me'],
     queryFn: () => apiFetch('/api/auth/me'),
     retry: false,
+    staleTime: 5 * 60 * 1000,
   });
   const signedIn = !!authData?.user;
 

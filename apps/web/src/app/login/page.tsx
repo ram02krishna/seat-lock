@@ -102,6 +102,7 @@ function LoginForm() {
     queryKey: ['auth', 'me'],
     queryFn: () => apiFetch('/api/auth/me'),
     retry: false,
+    staleTime: 5 * 60 * 1000,
   });
   useEffect(() => {
     if (me?.user) router.replace(redirectTo);
@@ -121,9 +122,13 @@ function LoginForm() {
     setDevOtp(null);
   }
 
-  async function finishSignIn() {
-    // Everything cached so far was fetched as a guest
-    await queryClient.invalidateQueries();
+  async function finishSignIn(payload?: any) {
+    if (payload?.user) {
+      queryClient.setQueryData(['auth', 'me'], { user: payload.user });
+    }
+    // Invalidate auth and tickets so components update with fresh session
+    queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
+    queryClient.invalidateQueries({ queryKey: ['my-tickets'] });
     router.replace(redirectTo);
   }
 
@@ -156,8 +161,8 @@ function LoginForm() {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     run(async () => {
-      await post('/api/auth/login', { email, password });
-      await finishSignIn();
+      const res = await post('/api/auth/login', { email, password });
+      await finishSignIn(res);
     }, 'Sign-in failed. Check your details and try again.');
   };
 
@@ -169,8 +174,8 @@ function LoginForm() {
   const handleVerifyRegister = (e: React.FormEvent) => {
     e.preventDefault();
     run(async () => {
-      await post('/api/auth/register/verify-otp', { email, otp: otp.trim() });
-      await finishSignIn();
+      const res = await post('/api/auth/register/verify-otp', { email, otp: otp.trim() });
+      await finishSignIn(res);
     }, 'That code didn’t work.');
   };
 
@@ -182,8 +187,8 @@ function LoginForm() {
   const handleReset = (e: React.FormEvent) => {
     e.preventDefault();
     run(async () => {
-      await post('/api/auth/reset-password', { email, otp: otp.trim(), newPassword });
-      await finishSignIn();
+      const res = await post('/api/auth/reset-password', { email, otp: otp.trim(), newPassword });
+      await finishSignIn(res);
     }, 'Couldn’t reset the password.');
   };
 

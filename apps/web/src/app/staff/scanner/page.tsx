@@ -71,6 +71,7 @@ export default function StaffScannerPage() {
     queryKey: ['auth', 'me'],
     queryFn: () => apiFetch('/api/auth/me'),
     retry: false,
+    staleTime: 5 * 60 * 1000,
   });
   const user = authData?.user;
   const isAuthorized = user?.role === 'STAFF' || user?.role === 'ORGANIZER';

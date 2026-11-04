@@ -429,6 +429,7 @@ export default function OrganizerDashboardPage() {
     queryKey: ['auth', 'me'],
     queryFn: () => apiFetch('/api/auth/me'),
     retry: false,
+    staleTime: 5 * 60 * 1000,
   });
   const isOrganizer = authData?.user?.role === 'ORGANIZER';
 
@@ -437,6 +438,7 @@ export default function OrganizerDashboardPage() {
     queryFn: () => apiFetch('/api/organizer/stats'),
     enabled: isOrganizer,
     refetchInterval: 15000,
+    refetchIntervalInBackground: false,
   });
 
   if (authLoading) {

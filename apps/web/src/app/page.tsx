@@ -137,12 +137,14 @@ export default function HomePage() {
   const { data, isLoading, isError, refetch, isFetching } = useQuery<{ events: EventItem[] }>({
     queryKey: ['events'],
     queryFn: () => apiFetch('/api/events'),
+    staleTime: 30000,
   });
 
   const { data: holdData, refetch: refetchHold } = useQuery<{ hold: ActiveHoldInfo | null }>({
     queryKey: ['active-hold'],
     queryFn: () => apiFetch('/api/events/active-hold'),
     refetchInterval: 15000,
+    refetchIntervalInBackground: false,
   });
 
   const events = data?.events ?? [];

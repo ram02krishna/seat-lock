@@ -275,8 +275,55 @@
 /* Print: tickets only                                                  */
 /* ------------------------------------------------------------------ */
 @media print {
-  header, footer, aside, .no-print { display: none !important; }
-  body { background: #fff !important; color: #000 !important; }
-  .card { box-shadow: none !important; border-color: #ccc !important; break-inside: avoid; }
-  .page { animation: none; max-width: 100% !important; padding: 0 !important; }
+  header.no-print,
+  nav,
+  footer,
+  aside,
+  .no-print {
+    display: none !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-size: 11pt;
+  }
+
+  @page {
+    size: auto;
+    margin: 12mm 14mm;
+  }
+
+  .page {
+    animation: none !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* When an order is selected for printing, hide all other order cards */
+  body[data-printing-order] .order-card:not([data-order-printing="true"]) {
+    display: none !important;
+  }
+
+  .card {
+    box-shadow: none !important;
+    border: 1px solid #d1d5db !important;
+    background: #ffffff !important;
+    color: #111827 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .ticket-card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    border: 1px solid #d1d5db !important;
+    background: #f9fafb !important;
+  }
 }
