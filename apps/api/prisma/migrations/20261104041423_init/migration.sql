@@ -37,9 +37,13 @@ CREATE TABLE "Venue" (
 CREATE TABLE "Event" (
     "id" TEXT NOT NULL,
     "venueId" TEXT NOT NULL,
+    "organizerId" TEXT,
     "title" TEXT NOT NULL,
     "description" TEXT,
+    "location" TEXT,
+    "imageUrl" TEXT,
     "startsAt" TIMESTAMP(3) NOT NULL,
+    "capacity" INTEGER NOT NULL DEFAULT 0,
     "status" "EventStatus" NOT NULL DEFAULT 'PUBLISHED',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -113,6 +117,9 @@ CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE INDEX "Event_venueId_idx" ON "Event"("venueId");
 
 -- CreateIndex
+CREATE INDEX "Event_organizerId_idx" ON "Event"("organizerId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Seat_venueId_section_row_number_key" ON "Seat"("venueId", "section", "row", "number");
 
 -- CreateIndex
@@ -144,6 +151,9 @@ CREATE INDEX "Ticket_qrToken_idx" ON "Ticket"("qrToken");
 
 -- AddForeignKey
 ALTER TABLE "Event" ADD CONSTRAINT "Event_venueId_fkey" FOREIGN KEY ("venueId") REFERENCES "Venue"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Event" ADD CONSTRAINT "Event_organizerId_fkey" FOREIGN KEY ("organizerId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Seat" ADD CONSTRAINT "Seat_venueId_fkey" FOREIGN KEY ("venueId") REFERENCES "Venue"("id") ON DELETE CASCADE ON UPDATE CASCADE;
