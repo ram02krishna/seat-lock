@@ -160,11 +160,11 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
     }
     if (form.location.trim() !== (e.location ?? '')) {
       payload.location = optionalText(form.location) ?? null;
-      labels.push(form.location.trim() ? `Location → ${form.location.trim()}` : 'Location removed');
+      labels.push(form.location.trim() ? `Location → ${form.location.trim()}` : 'Location deleted');
     }
     if (form.imageUrl.trim() !== (e.imageUrl ?? '')) {
       payload.imageUrl = optionalText(form.imageUrl) ?? null;
-      labels.push(form.imageUrl.trim() ? 'Image updated' : 'Image removed');
+      labels.push(form.imageUrl.trim() ? 'Image updated' : 'Image deleted');
     }
 
     const total = Number(form.totalSeats);
@@ -445,9 +445,9 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
               className={`${field} max-w-[200px] tabular-nums`}
             />
             <p className="mt-1.5 text-xs text-ink-3">
-              {data.isCinema && 'The same seat map is used by every showtime, so seats are added to or removed from all of them. '}
-              Extra seats are added behind the last row ({seating.seatsPerRow} per row). Reducing capacity only removes open seats from the back;
-              {seating.minCapacity > 0 ? ` it can’t go below ${seating.minCapacity} while seats are sold or held.` : ' sold or held seats are never removed.'}
+              {data.isCinema && 'The same seat map is used by every showtime, so seats are added to or deleted from all of them. '}
+              Extra seats are added behind the last row ({seating.seatsPerRow} per row). Reducing capacity only deletes open seats from the back;
+              {seating.minCapacity > 0 ? ` it can’t go below ${seating.minCapacity} while seats are sold or held.` : ' sold or held seats are never deleted.'}
             </p>
           </div>
 
@@ -514,7 +514,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
           <div>
             <h3 className="font-display font-semibold text-base text-ink">Delete this event</h3>
             <p className="text-xs text-ink-3">
-              Permanently remove this event and cancel all bookings. Only the organizer who created it can delete it.
+              Permanently delete this event and cancel all bookings. Only the organizer who created it can delete it.
             </p>
           </div>
           <button

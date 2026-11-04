@@ -403,11 +403,11 @@ function StaffSection() {
                 <button
                   type="button"
                   disabled={remove.isPending}
-                  onClick={() => confirm(`Remove scanner access for ${m.email}?`) && remove.mutate(m.id)}
+                  onClick={() => confirm(`Delete scanner access for ${m.email}?`) && remove.mutate(m.id)}
                   className="btn btn-ghost btn-sm text-danger"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  Remove
+                  Delete
                 </button>
               </div>
             ))
@@ -548,7 +548,7 @@ export default function OrganizerDashboardPage() {
                   <div className="flex items-center gap-1.5 flex-wrap md:justify-end">
                     <Link
                       href={`/organizer/events/${ev.id}/edit`}
-                      className="btn btn-secondary btn-xs"
+                      className="btn btn-edit btn-xs"
                       title="Edit event"
                     >
                       <Pencil className="h-3 w-3" />
@@ -565,7 +565,7 @@ export default function OrganizerDashboardPage() {
                     <button
                       type="button"
                       onClick={() => setEventToDelete(ev)}
-                      className="btn btn-secondary btn-xs text-danger"
+                      className="btn btn-delete btn-xs"
                       title="Delete event"
                     >
                       <Trash2 className="h-3 w-3" />

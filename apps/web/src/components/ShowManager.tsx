@@ -406,7 +406,7 @@ export function ShowManager({
                     type="button"
                     onClick={() => openEdit(show)}
                     disabled={disabled || (isLive && isPast)}
-                    className="btn btn-secondary btn-xs"
+                    className="btn btn-edit btn-xs"
                     title={isLive && isPast ? 'This show has already started' : 'Edit showtime'}
                   >
                     <Pencil className="h-3 w-3" />
@@ -416,11 +416,11 @@ export function ShowManager({
                     type="button"
                     onClick={() => (isLive ? setDeletingShow(show) : deleteShow.mutate(show))}
                     disabled={disabled || !!deleteBlockedReason}
-                    className="btn btn-secondary btn-xs text-danger"
+                    className="btn btn-delete btn-xs"
                     title={deleteBlockedReason ?? 'Delete showtime'}
                   >
                     <Trash2 className="h-3 w-3" />
-                    {isLive ? 'Delete' : 'Remove'}
+                    Delete
                   </button>
                 </div>
               </div>
@@ -453,7 +453,7 @@ export function ShowManager({
             </div>
             <p className="text-sm leading-relaxed text-ink-2">
               The show on <strong className="font-semibold text-ink">{formatEventDateTime(deletingShow.startsAt)}</strong> and its
-              seat map will be removed. This can’t be undone.
+              seat map will be deleted. This can’t be undone.
             </p>
             <div className="flex justify-end gap-2 border-t border-line pt-3">
               <button type="button" onClick={() => setDeletingShow(null)} disabled={deleteShow.isPending} className="btn btn-secondary btn-sm">

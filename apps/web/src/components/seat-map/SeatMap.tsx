@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Minus, Move, Plus, RotateCcw } from 'lucide-react';
 import { useCartStore, SeatItem } from '@/store/cartStore';
 import { formatINR } from '@/lib/format';
@@ -86,6 +86,117 @@ const SEAT_STATUS_LABEL: Record<SeatKind, string> = {
   sold: 'Taken',
 };
 
+interface SeatNodeProps {
+  seat: SeatData;
+  kind: SeatKind;
+  interactive: boolean;
+  hovered: boolean;
+  dim: boolean;
+  label: string;
+  onActivate: (seat: SeatData) => void;
+  onHover: (seat: SeatData) => void;
+}
+
+const SeatNode = memo(function SeatNode({
+  seat,
+  kind,
+  interactive,
+  hovered,
+  dim,
+  label,
+  onActivate,
+  onHover,
+}: SeatNodeProps) {
+  const paint = seatPaint(kind, seat.tier, hovered);
+
+  return (
+    <g
+      className="seat-group"
+      transform={`translate(${seat.x} ${seat.y})`}
+      role="button"
+      tabIndex={interactive ? 0 : -1}
+      aria-label={label}
+      aria-pressed={kind === 'selected'}
+      aria-disabled={!interactive}
+      opacity={dim ? 0.22 : 1}
+      style={{
+        cursor: interactive ? 'pointer' : 'not-allowed',
+        transition: 'opacity 140ms ease',
+      }}
+      onClick={() => onActivate(seat)}
+      onMouseEnter={() => onHover(seat)}
+      onFocus={() => onHover(seat)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onActivate(seat);
+        }
+      }}
+    >
+      {/* generous invisible hit area for touch */}
+      <rect x={-19} y={-19} width={38} height={38} fill="transparent" />
+      <rect
+        className="seat-focus"
+        x={-19}
+        y={-19}
+        width={38}
+        height={38}
+        rx={9}
+        fill="none"
+        stroke={rgb('--accent')}
+        strokeWidth={2}
+        opacity={0}
+      />
+      <g
+        style={{
+          transformBox: 'fill-box',
+          transformOrigin: 'center',
+          transform: kind === 'selected' ? 'scale(1.1)' : 'scale(1)',
+          transition: 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1)',
+        }}
+      >
+        {/* backrest */}
+        <rect
+          className="seat-shape"
+          x={-10}
+          y={-14}
+          width={20}
+          height={9}
+          rx={4}
+          fill={paint.fill}
+          stroke={paint.stroke}
+          strokeWidth={1.4}
+          strokeDasharray={paint.dash}
+        />
+        {/* cushion */}
+        <rect
+          className="seat-shape"
+          x={-13}
+          y={-6}
+          width={26}
+          height={19}
+          rx={5}
+          fill={paint.fill}
+          stroke={paint.stroke}
+          strokeWidth={1.4}
+          strokeDasharray={paint.dash}
+        />
+        <text
+          y={7}
+          textAnchor="middle"
+          fontSize={10}
+          fontWeight={600}
+          fill={paint.text}
+          pointerEvents="none"
+          style={{ fontVariantNumeric: 'tabular-nums' }}
+        >
+          {seat.number}
+        </text>
+      </g>
+    </g>
+  );
+});
+
 export function SeatMap({ seats, venueLayout }: SeatMapProps) {
   const { selectedSeats, heldSeatIds, toggleSeat, removeSeats } = useCartStore();
   const [activeSeat, setActiveSeat] = useState<SeatData | null>(null);
@@ -103,12 +214,11 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
 
   // Panning & dragging state:
   // - Touch devices (smartphones/tablets): utilize native, hardware-accelerated touch scrolling via `touch-action: pan-x pan-y`
-  // - Desktop mouse: support click-and-drag panning
+  // - Desktop mouse: support click-and-drag panning without re-rendering React components
   const isMouseDownRef = useRef(false);
   const isDraggingRef = useRef(false);
   const justDraggedRef = useRef(false);
   const startPosRef = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 });
-  const [isDraggingState, setIsDraggingState] = useState(false);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // Only capture primary mouse button for desktop drag-to-pan
@@ -123,9 +233,6 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
         scrollLeft: mapScrollRef.current.scrollLeft,
         scrollTop: mapScrollRef.current.scrollTop,
       };
-      // NOTE: do not setPointerCapture here. Capturing on pointerdown retargets the subsequent
-      // `click` to the scroll container, so seat onClick handlers never fire. We only capture
-      // once the pointer has actually started dragging (see handlePointerMove).
     }
   };
 
@@ -136,7 +243,7 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
 
       if (!isDraggingRef.current && Math.hypot(dx, dy) > 4) {
         isDraggingRef.current = true;
-        setIsDraggingState(true);
+        mapScrollRef.current.style.cursor = 'grabbing';
         try {
           mapScrollRef.current.setPointerCapture(e.pointerId);
         } catch {
@@ -157,7 +264,6 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
       if (isDraggingRef.current) {
         justDraggedRef.current = true;
         isDraggingRef.current = false;
-        setIsDraggingState(false);
         try {
           if (mapScrollRef.current?.hasPointerCapture(e.pointerId)) {
             mapScrollRef.current.releasePointerCapture(e.pointerId);
@@ -168,6 +274,9 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
         setTimeout(() => {
           justDraggedRef.current = false;
         }, 150);
+      }
+      if (mapScrollRef.current) {
+        mapScrollRef.current.style.cursor = 'grab';
       }
     }
   };
@@ -185,14 +294,17 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
     window.clearTimeout(flashTimer.current);
   }, []);
 
-  function kindOf(seat: SeatData): SeatKind {
-    if (seat.status === 'SOLD') return 'sold';
-    if (selectedIds.has(seat.id) || seat.isHeldByMe || (seat.status === 'HELD' && heldIds.has(seat.id))) {
-      return 'selected';
-    }
-    if (seat.status === 'HELD') return 'held';
-    return 'available';
-  }
+  const kindOf = useCallback(
+    (seat: SeatData): SeatKind => {
+      if (seat.status === 'SOLD') return 'sold';
+      if (selectedIds.has(seat.id) || seat.isHeldByMe || (seat.status === 'HELD' && heldIds.has(seat.id))) {
+        return 'selected';
+      }
+      if (seat.status === 'HELD') return 'held';
+      return 'available';
+    },
+    [selectedIds, heldIds],
+  );
 
   // If someone else takes a seat while it is sitting in the cart, say so and drop it.
   const seatById = useMemo(() => new Map(seats.map((s) => [s.id, s])), [seats]);
@@ -200,37 +312,46 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
     if (heldSeatIds.length > 0 || selectedSeats.length === 0) return;
     const lost = selectedSeats.filter((sel) => {
       const live = seatById.get(sel.id);
-      // A seat that no longer exists was removed by the organizer (capacity reduced)
+      // A seat that no longer exists was deleted by the organizer (capacity reduced)
       return !live || live.status === 'SOLD' || (live.status === 'HELD' && !live.isHeldByMe);
     });
     if (lost.length === 0) return;
     removeSeats(lost.map((s) => s.id));
     showFlash(
-      `${lost.map((s) => `${s.row}${s.number}`).join(', ')} ${lost.length === 1 ? 'is' : 'are'} no longer available, so we removed ${lost.length === 1 ? 'it' : 'them'} from your selection.`,
+      `${lost.map((s) => `${s.row}${s.number}`).join(', ')} ${lost.length === 1 ? 'is' : 'are'} no longer available, so we deleted ${lost.length === 1 ? 'it' : 'them'} from your selection.`,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seatById]);
 
-  function handleSeatActivate(seat: SeatData) {
-    // A genuine tap never produces a scroll, and browsers don't fire click after a touch pan,
-    // so only ignore clicks that end a mouse drag.
-    if (isDraggingRef.current || justDraggedRef.current) return;
-    setActiveSeat(seat);
-    const kind = kindOf(seat);
-    if (kind === 'sold' || kind === 'held') return;
+  const handleSeatActivate = useCallback(
+    (seat: SeatData) => {
+      // A genuine tap never produces a scroll, and browsers don't fire click after a touch pan,
+      // so only ignore clicks that end a mouse drag.
+      if (isDraggingRef.current || justDraggedRef.current) return;
+      setActiveSeat(seat);
+      const kind = kindOf(seat);
+      if (kind === 'sold' || kind === 'held') return;
 
-    const item: SeatItem = {
-      id: seat.id,
-      seatId: seat.seatId,
-      section: seat.section,
-      row: seat.row,
-      number: seat.number,
-      tier: seat.tier,
-      price: seat.price,
-    };
-    const res = toggleSeat(item);
-    if (!res.success && res.error) showFlash(res.error);
-  }
+      const item: SeatItem = {
+        id: seat.id,
+        seatId: seat.seatId,
+        section: seat.section,
+        row: seat.row,
+        number: seat.number,
+        tier: seat.tier,
+        price: seat.price,
+      };
+      const res = toggleSeat(item);
+      if (!res.success && res.error) showFlash(res.error);
+    },
+    [kindOf, toggleSeat],
+  );
+
+  const handleHover = useCallback((seat: SeatData) => {
+    if (!isDraggingRef.current && !isMouseDownRef.current) {
+      setActiveSeat(seat);
+    }
+  }, []);
 
   // ---- geometry -------------------------------------------------------
   const geometry = useMemo(() => {
@@ -393,7 +514,7 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
         style={{
-          cursor: isDraggingState ? 'grabbing' : 'grab',
+          cursor: 'grab',
           touchAction: 'pan-x pan-y',
           WebkitOverflowScrolling: 'touch',
         }}
@@ -512,98 +633,21 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
             const kind = kindOf(seat);
             const interactive = kind === 'available' || kind === 'selected';
             const hovered = activeSeat?.id === seat.id;
-            const paint = seatPaint(kind, seat.tier, hovered);
             const dim = tierFilter !== null && tierFilter !== seat.tier;
             const label = `Row ${seat.row}, seat ${seat.number}, ${tierName(seat.tier)}, ${formatINR(seat.price)}, ${SEAT_STATUS_LABEL[kind].toLowerCase()}`;
 
             return (
-              <g
+              <SeatNode
                 key={seat.id}
-                className="seat-group"
-                transform={`translate(${seat.x} ${seat.y})`}
-                role="button"
-                tabIndex={interactive ? 0 : -1}
-                aria-label={label}
-                aria-pressed={kind === 'selected'}
-                aria-disabled={!interactive}
-                opacity={dim ? 0.22 : 1}
-                style={{
-                  cursor: isDraggingState ? 'grabbing' : interactive ? 'pointer' : 'not-allowed',
-                  transition: 'opacity 140ms ease',
-                }}
-                onClick={() => handleSeatActivate(seat)}
-                onMouseEnter={() => {
-                  if (!isDraggingRef.current && !isMouseDownRef.current) setActiveSeat(seat);
-                }}
-                onFocus={() => setActiveSeat(seat)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleSeatActivate(seat);
-                  }
-                }}
-              >
-                {/* generous invisible hit area for touch */}
-                <rect x={-19} y={-19} width={38} height={38} fill="transparent" />
-                <rect
-                  className="seat-focus"
-                  x={-19}
-                  y={-19}
-                  width={38}
-                  height={38}
-                  rx={9}
-                  fill="none"
-                  stroke={rgb('--accent')}
-                  strokeWidth={2}
-                  opacity={0}
-                />
-                <g
-                  style={{
-                    transformBox: 'fill-box',
-                    transformOrigin: 'center',
-                    transform: kind === 'selected' ? 'scale(1.1)' : 'scale(1)',
-                    transition: 'transform 160ms cubic-bezier(0.22, 1, 0.36, 1)',
-                  }}
-                >
-                  {/* backrest */}
-                  <rect
-                    className="seat-shape"
-                    x={-10}
-                    y={-14}
-                    width={20}
-                    height={9}
-                    rx={4}
-                    fill={paint.fill}
-                    stroke={paint.stroke}
-                    strokeWidth={1.4}
-                    strokeDasharray={paint.dash}
-                  />
-                  {/* cushion */}
-                  <rect
-                    className="seat-shape"
-                    x={-13}
-                    y={-6}
-                    width={26}
-                    height={19}
-                    rx={5}
-                    fill={paint.fill}
-                    stroke={paint.stroke}
-                    strokeWidth={1.4}
-                    strokeDasharray={paint.dash}
-                  />
-                  <text
-                    y={7}
-                    textAnchor="middle"
-                    fontSize={10}
-                    fontWeight={600}
-                    fill={paint.text}
-                    pointerEvents="none"
-                    style={{ fontVariantNumeric: 'tabular-nums' }}
-                  >
-                    {seat.number}
-                  </text>
-                </g>
-              </g>
+                seat={seat}
+                kind={kind}
+                interactive={interactive}
+                hovered={hovered}
+                dim={dim}
+                label={label}
+                onActivate={handleSeatActivate}
+                onHover={handleHover}
+              />
             );
           })}
         </svg>

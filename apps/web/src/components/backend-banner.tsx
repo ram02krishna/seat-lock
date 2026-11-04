@@ -20,15 +20,16 @@ export function BackendBanner() {
     let wasSlow = false;
     const startedAt = Date.now();
 
+    let clock: NodeJS.Timeout | null = null;
     const slowTimer = setTimeout(() => {
       if (cancelled) return;
       wasSlow = true;
       setSlow(true);
-    }, 2500);
-
-    const clock = setInterval(() => {
       setElapsed(Math.floor((Date.now() - startedAt) / 1000));
-    }, 1000);
+      clock = setInterval(() => {
+        setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+      }, 1000);
+    }, 2500);
 
     async function ping() {
       while (!cancelled) {
@@ -51,14 +52,14 @@ export function BackendBanner() {
     ping().finally(() => {
       if (cancelled) return;
       clearTimeout(slowTimer);
-      clearInterval(clock);
+      if (clock) clearInterval(clock);
       setSlow(false);
     });
 
     return () => {
       cancelled = true;
       clearTimeout(slowTimer);
-      clearInterval(clock);
+      if (clock) clearInterval(clock);
     };
   }, [queryClient]);
 

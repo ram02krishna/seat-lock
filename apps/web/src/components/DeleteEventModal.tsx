@@ -78,14 +78,14 @@ export function DeleteEventModal({
             Are you sure you want to delete <strong className="text-ink font-semibold">“{eventTitle}”</strong>?
           </p>
           <p className="text-xs text-ink-3 leading-relaxed">
-            Once deleted, this event and its show timings will no longer be visible to users or available for booking. All seat availability and hold records will be permanently removed.
+            Once deleted, this event and its show timings will no longer be visible to users or available for booking. All seat availability and hold records will be permanently deleted.
           </p>
 
           {soldTicketsCount > 0 && (
             <div className="notice notice-warn">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>
-                <strong>Warning:</strong> {soldTicketsCount} ticket{soldTicketsCount === 1 ? ' has' : 's have'} already been booked for this event. Deleting the event will remove all associated ticket and booking records.
+                <strong>Warning:</strong> {soldTicketsCount} ticket{soldTicketsCount === 1 ? ' has' : 's have'} already been booked for this event. Deleting the event will delete all associated ticket and booking records.
               </span>
             </div>
           )}

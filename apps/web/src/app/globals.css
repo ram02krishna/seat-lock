@@ -115,7 +115,7 @@
 /* ------------------------------------------------------------------ */
 @layer components {
   .page {
-    @apply mx-auto w-full px-3.5 sm:px-6 animate-rise;
+    @apply mx-auto w-full px-3.5 sm:px-6;
   }
 
   .card {
@@ -128,7 +128,7 @@
 
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold
-      transition duration-150 select-none whitespace-nowrap
+      transition-colors duration-100 select-none whitespace-nowrap
       active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 touch-manipulation;
   }
   .btn-sm {
@@ -142,6 +142,12 @@
   }
   .btn-secondary {
     @apply border border-line-strong bg-surface text-ink hover:bg-sunken;
+  }
+  .btn-edit {
+    @apply border border-accent/40 bg-surface text-accent hover:border-accent hover:bg-accent-soft/70;
+  }
+  .btn-delete {
+    @apply border border-danger/40 bg-surface text-danger hover:border-danger hover:bg-danger-soft/70;
   }
   .btn-ghost {
     @apply text-ink-2 hover:bg-sunken hover:text-ink;

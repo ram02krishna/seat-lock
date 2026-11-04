@@ -128,7 +128,7 @@ export default function EventSeatMapPage({ params }: EventPageProps) {
           {notFound ? 'We can’t find that event' : 'Couldn’t load the seat map'}
         </h1>
         <p className="text-sm text-ink-2">
-          {notFound ? 'It may have been removed or the link is out of date.' : 'Check your connection and try again.'}
+          {notFound ? 'It may have been deleted or the link is out of date.' : 'Check your connection and try again.'}
         </p>
         <div className="flex justify-center gap-2">
           {!notFound && (

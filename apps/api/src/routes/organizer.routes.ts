@@ -594,7 +594,7 @@ organizerRouter.delete(
         where: { id },
       });
 
-      res.status(200).json({ message: 'Staff account removed successfully' });
+      res.status(200).json({ message: 'Staff account deleted successfully' });
     } catch (err) {
       next(err);
     }

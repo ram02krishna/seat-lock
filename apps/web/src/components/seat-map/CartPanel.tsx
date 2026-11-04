@@ -159,7 +159,7 @@ export function CartPanel({ eventId, showId, showStartsAt, onHoldSuccess, onRele
                 type="button"
                 onClick={() => toggleSeat(seat)}
                 className="rounded-md p-1 text-ink-3 hover:bg-sunken hover:text-danger"
-                aria-label={`Remove row ${seat.row} seat ${seat.number}`}
+                aria-label={`Delete row ${seat.row} seat ${seat.number}`}
               >
                 <X className="h-3.5 w-3.5" />
               </button>

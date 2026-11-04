@@ -4,7 +4,7 @@ import { use, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Trash2 } from 'lucide-react';
+import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { formatINR, formatEventDateTime } from '@/lib/format';
 import { VenueBadge } from '@/components/venue-badge';
@@ -118,7 +118,8 @@ export default function EventAnalyticsPage({ params }: { params: Promise<{ id: s
             </p>
           </div>
           <div className="flex gap-2 shrink-0 flex-wrap">
-            <Link href={`/organizer/events/${event.id}/edit`} className="btn btn-primary btn-sm flex-1 sm:flex-initial">
+            <Link href={`/organizer/events/${event.id}/edit`} className="btn btn-edit btn-sm flex-1 sm:flex-initial">
+              <Pencil className="h-3.5 w-3.5" />
               Edit event
             </Link>
             <Link href={`/events/${event.id}`} className="btn btn-secondary btn-sm flex-1 sm:flex-initial">
@@ -130,7 +131,7 @@ export default function EventAnalyticsPage({ params }: { params: Promise<{ id: s
             <button
               type="button"
               onClick={() => setDeleteOpen(true)}
-              className="btn btn-secondary btn-sm flex-1 text-danger sm:flex-initial"
+              className="btn btn-delete btn-sm flex-1 sm:flex-initial"
             >
               <Trash2 className="h-3.5 w-3.5" />
               Delete event

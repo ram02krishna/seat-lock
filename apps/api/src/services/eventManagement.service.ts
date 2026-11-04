@@ -489,7 +489,7 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
       const customerFacing: string[] = [];
       if (dateChanged) customerFacing.push('Date and time changed');
       if (venueChanged) customerFacing.push(`Venue changed to ${input.venueName}`);
-      if (locationChanged) customerFacing.push(input.location ? `Location changed to ${input.location}` : 'Location removed');
+      if (locationChanged) customerFacing.push(input.location ? `Location changed to ${input.location}` : 'Location deleted');
 
       if (sold > 0 && customerFacing.length > 0 && !input.confirm) {
         throw new AppError(
@@ -681,7 +681,7 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
       if (input.imageUrl !== undefined && (input.imageUrl ?? null) !== (ev.imageUrl ?? null)) changes.push('Image updated');
       changes.push(...customerFacing);
       if (seatsAdded) changes.push(`${seatsAdded} seat${seatsAdded === 1 ? '' : 's'} added${useShows ? ' to every show' : ''} (capacity ${finalState.length})`);
-      if (seatsRemoved) changes.push(`${seatsRemoved} seat${seatsRemoved === 1 ? '' : 's'} removed${useShows ? ' from every show' : ''} (capacity ${finalState.length})`);
+      if (seatsRemoved) changes.push(`${seatsRemoved} seat${seatsRemoved === 1 ? '' : 's'} deleted${useShows ? ' from every show' : ''} (capacity ${finalState.length})`);
       for (const p of pricingReport) if (p.updatedSeats > 0) changes.push(`${p.tier} price updated on ${p.updatedSeats} open seat${p.updatedSeats === 1 ? '' : 's'}`);
 
       let notify: UpdateEventResult['notify'] = null;
