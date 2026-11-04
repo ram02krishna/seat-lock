@@ -18,7 +18,7 @@ interface EventPageProps {
 
 interface SeatsResponse {
   eventId: string;
-  event?: { id: string; title: string; description?: string; startsAt: string };
+  event?: { id: string; title: string; description?: string; location?: string | null; imageUrl?: string | null; startsAt: string; capacity?: number };
   venue: { id: string; name: string; layout: any };
   seats: SeatData[];
 }
@@ -135,6 +135,7 @@ export default function EventSeatMapPage({ params }: EventPageProps) {
               <span className="inline-flex items-center gap-1.5">
                 <MapPin className="h-3.5 w-3.5 text-ink-3 shrink-0" />
                 <span className="font-medium">{venue.name}</span>
+                {event?.location && <span className="text-ink-3">· {event.location}</span>}
               </span>
               {event?.startsAt && (
                 <span className="inline-flex items-center gap-1.5">
@@ -161,6 +162,13 @@ export default function EventSeatMapPage({ params }: EventPageProps) {
           </button>
         </div>
       </header>
+
+      {event?.imageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={event.imageUrl} alt="" className="max-h-56 w-full rounded-xl border border-line object-cover" />
+      )}
+
+      {event?.description && <p className="max-w-3xl text-sm text-ink-2">{event.description}</p>}
 
       {started && (
         <p className="notice notice-warn">This event has already started, so seats can no longer be booked.</p>

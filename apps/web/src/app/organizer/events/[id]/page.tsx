@@ -73,7 +73,7 @@ export default function EventAnalyticsPage({ params }: { params: Promise<{ id: s
     return (
       <main className="page max-w-md space-y-4 py-24 text-center">
         <h1 className="font-display text-2xl font-semibold">Couldn’t load this event</h1>
-        <p className="text-sm text-ink-2">You need to be signed in as an organizer, and the event has to exist.</p>
+        <p className="text-sm text-ink-2">You need to be signed in as the organizer who created this event.</p>
         <Link href="/organizer" className="btn btn-secondary btn-sm">
           Back to dashboard
         </Link>
@@ -112,6 +112,9 @@ export default function EventAnalyticsPage({ params }: { params: Promise<{ id: s
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
+            <Link href={`/organizer/events/${event.id}/edit`} className="btn btn-primary btn-sm flex-1 sm:flex-initial">
+              Edit event
+            </Link>
             <Link href={`/events/${event.id}`} className="btn btn-secondary btn-sm flex-1 sm:flex-initial">
               Public page
             </Link>

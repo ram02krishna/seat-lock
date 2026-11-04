@@ -389,3 +389,73 @@ export async function sendOtpEmail(params: SendOtpEmailParams): Promise<SendEmai
     return { success: false, error: err?.message || 'Failed to send verification email' };
   }
 }
+
+export interface SendEventUpdatedEmailParams {
+  toEmail: string;
+  eventTitle: string;
+  startsAt: Date;
+  venueName: string;
+  location?: string | null;
+  changes: string[];
+}
+
+/** Tells ticket holders that the date or place of an event they booked has changed. */
+export async function sendEventUpdatedEmail(params: SendEventUpdatedEmailParams) {
+  const { toEmail, eventTitle, startsAt, venueName, location, changes } = params;
+  const viewTicketsUrl = config.CLIENT_TICKETS_URL || 'https://seat-lock.vercel.app/my-tickets';
+  const formattedDate = new Date(startsAt).toLocaleString('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <body style="font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background-color: #f3f5f8; color: #101622; margin: 0; padding: 32px 16px;">
+        <div style="max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #dfe4ec; padding: 28px 24px;">
+          <h1 style="margin: 0 0 6px 0; font-size: 20px;">Event details updated</h1>
+          <p style="margin: 0 0 18px 0; font-size: 14px; color: #3e495c;">
+            The organizer changed details of <strong>${escapeHtml(eventTitle)}</strong>. Your tickets and seats are unchanged and remain valid.
+          </p>
+          <ul style="margin: 0 0 18px 18px; padding: 0; font-size: 14px; color: #101622;">
+            ${changes.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}
+          </ul>
+          <div style="background: #f8fafc; border: 1px solid #dfe4ec; border-radius: 12px; padding: 14px 16px; font-size: 14px;">
+            <div><strong>When:</strong> ${escapeHtml(formattedDate)}</div>
+            <div><strong>Venue:</strong> ${escapeHtml(venueName)}</div>
+            ${location ? `<div><strong>Location:</strong> ${escapeHtml(location)}</div>` : ''}
+          </div>
+          <p style="margin: 20px 0 0 0;">
+            <a href="${escapeHtml(viewTicketsUrl)}" style="display: inline-block; background: #2554d6; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 12px 28px; border-radius: 8px;">View my tickets</a>
+          </p>
+        </div>
+      </body>
+    </html>
+  `;
+
+  try {
+    if (!resend) {
+      logger.info(`[Resend Mock] Event update email sent to ${toEmail} for "${eventTitle}"`);
+      return;
+    }
+    const overrideEmail = config.RESEND_OVERRIDE_EMAIL;
+    const recipient = overrideEmail || (toEmail.endsWith('@example.com') ? 'delivered@resend.dev' : toEmail);
+    const fromEmail =
+      config.RESEND_TICKETS_FROM_EMAIL || config.RESEND_FROM_EMAIL || 'SeatLock <security@ram02krishna.me>';
+    const result = await resend.emails.send({
+      from: fromEmail,
+      to: recipient,
+      subject: `Update: ${eventTitle} has changed`,
+      html,
+    });
+    if (result.error) {
+      logger.error(`Resend API Error: ${result.error.message} (code: ${result.error.name})`);
+    }
+  } catch (err) {
+    logger.error(err, `Failed to send event update email to ${toEmail}`);
+  }
+}

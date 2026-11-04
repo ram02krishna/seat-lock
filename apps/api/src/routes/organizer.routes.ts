@@ -2,13 +2,16 @@ import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
 import { validateBody } from '../middleware/validate';
-import { CreateVenueSchema, CreateEventSchema, GenerateSeatsSchema, CreateStaffSchema } from '@repo/shared';
+import { CreateVenueSchema, CreateEventSchema, UpdateEventSchema, GenerateSeatsSchema, CreateStaffSchema } from '@repo/shared';
 import { requireAuth, requireRole } from '../middleware/auth';
 import { AppError } from '../errors';
-import { Role, SeatStatus } from '@prisma/client';
+import { Prisma, Role, SeatStatus } from '@prisma/client';
 import { getVenueTemplate, VENUE_TEMPLATES } from '../services/venueTemplates.service';
-import type { VenueType } from '@repo/shared';
 import { redisConnection } from '../redis';
+import { broadcastEventUpdated } from '../socket';
+import { sendEventUpdatedEmail } from '../services/email.service';
+import { assertOwner, createEvent, getEventForEdit, updateEvent } from '../services/eventManagement.service';
+import { logger } from '../logger';
 
 export const organizerRouter = Router();
 
@@ -128,126 +131,59 @@ organizerRouter.post(
   }
 );
 
-// Create event and populate its EventSeats
+// Create an event. The organizer chooses the seat capacity; the seat map is generated from it.
 organizerRouter.post(
   '/events',
   validateBody(CreateEventSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { venueId, venueName, venueType, title, description, startsAt, pricing } = req.body;
-
-      const eventStart = new Date(startsAt);
-      if (eventStart.getTime() <= Date.now()) {
-        return next(new AppError(400, 'The event start time must be in the future'));
-      }
-
-      let venue = null;
-      if (venueId) {
-        venue = await prisma.venue.findUnique({
-          where: { id: venueId },
-          include: { seats: true },
-        });
-      }
-
-      const template = getVenueTemplate(venueType);
-
-      if (!venue && venueName && venueName.trim()) {
-        const vName = venueName.trim();
-        const existing = await prisma.venue.findFirst({
-          where: { name: { equals: vName, mode: 'insensitive' } },
-          include: { seats: true },
-        });
-
-        if (existing) {
-          venue = existing;
-        } else {
-          venue = await prisma.venue.create({
-            data: {
-              name: vName,
-              layout: template.layout as any,
-            },
-            include: { seats: true },
-          });
-
-          const seatDefs = template.generateSeats(venue.id);
-          await prisma.seat.createMany({ data: seatDefs, skipDuplicates: true });
-          venue = await prisma.venue.findUnique({ where: { id: venue.id }, include: { seats: true } });
-        }
-      }
-
-      // Fallback to default configured venue with seats
-      if (!venue) {
-        venue = await prisma.venue.findFirst({
-          where: { seats: { some: {} } },
-          include: { seats: true },
-        });
-      }
-
-      if (!venue) {
-        return next(new AppError(404, 'Venue not found'));
-      }
-
-      if (venue.seats.length === 0) {
-        const seatDefs = template.generateSeats(venue.id);
-        await prisma.seat.createMany({ data: seatDefs, skipDuplicates: true });
-        venue = await prisma.venue.findUnique({ where: { id: venue.id }, include: { seats: true } });
-      }
-
-      if (!venue || venue.seats.length === 0) {
-        return next(
-          new AppError(400, 'Venue has no seats. Could not initialize seats.')
-        );
-      }
-
-      // Default prices should follow the venue that was actually chosen, not the form's layout
-      // preset (which is only meaningful when a brand-new venue is being created).
-      const venueTemplateType = (venue.layout as { type?: VenueType } | null)?.type;
-      const pricingTemplate =
-        venueTemplateType && venueTemplateType in VENUE_TEMPLATES ? getVenueTemplate(venueTemplateType) : template;
-
-      // Populate EventSeat records for all venue seats
-      const defaultTierPricing: Record<string, number> = {
-        VIP: pricingTemplate.recommendedPricing.VIP,
-        PREMIUM: pricingTemplate.recommendedPricing.PREMIUM,
-        STANDARD: pricingTemplate.recommendedPricing.STANDARD,
-        ...pricing,
-      };
-      const venueSeats = venue.seats;
-      const resolvedVenueId = venue.id;
-
-      // Create the event and all of its seats together, so a failure can't leave behind a
-      // published event with no (or only some) seats.
-      const { event, eventSeatsCount } = await prisma.$transaction(
-        async (tx) => {
-          const created = await tx.event.create({
-            data: {
-              venueId: resolvedVenueId,
-              title,
-              description,
-              startsAt: eventStart,
-            },
-          });
-
-          const eventSeatsData = venueSeats.map((seat) => ({
-            eventId: created.id,
-            seatId: seat.id,
-            price: defaultTierPricing[seat.tier] || pricingTemplate.recommendedPricing.STANDARD,
-            status: SeatStatus.AVAILABLE,
-          }));
-
-          await tx.eventSeat.createMany({ data: eventSeatsData });
-          return { event: created, eventSeatsCount: eventSeatsData.length };
-        },
-        { timeout: 30000 },
-      );
+      const { event, seatsCount, seatsPerRow, tierCounts } = await createEvent(req.body, req.user!.userId);
 
       // Invalidate public events cache in Redis so new event appears instantly
       redisConnection.del('cache:events:published').catch(() => null);
 
-      res.status(201).json({
-        event,
-        seatsCount: eventSeatsCount,
-      });
+      res.status(201).json({ event, seatsCount, seatsPerRow, tierCounts });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Current settings of one of the organizer's own events (pre-fills the edit form)
+organizerRouter.get('/events/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.status(200).json(await getEventForEdit(req.params.id as string, req.user!.userId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Edit an event. Ownership is enforced here and again inside the transaction.
+organizerRouter.put(
+  '/events/:id',
+  validateBody(UpdateEventSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const eventId = req.params.id as string;
+      const { notify, ...result } = await updateEvent(eventId, req.user!.userId, req.body);
+
+      redisConnection.del('cache:events:published').catch(() => null);
+      broadcastEventUpdated(eventId);
+
+      if (notify) {
+        for (const toEmail of notify.emails) {
+          sendEventUpdatedEmail({
+            toEmail,
+            eventTitle: notify.title,
+            startsAt: notify.startsAt,
+            venueName: notify.venueName,
+            location: notify.location,
+            changes: notify.changes,
+          }).catch((err) => logger.error(err, 'Failed to send event update email'));
+        }
+      }
+
+      res.status(200).json({ ...result, notifiedCustomers: notify?.emails.length ?? 0 });
     } catch (err) {
       next(err);
     }
@@ -257,22 +193,28 @@ organizerRouter.post(
 // Overview stats for organizer dashboard
 organizerRouter.get('/stats', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const totalEvents = await prisma.event.count();
-    const totalVenues = await prisma.venue.count();
-    const totalTicketsSold = await prisma.ticket.count();
+    // Everything on the dashboard is scoped to the signed-in organizer's own events
+    const organizerId = _req.user!.userId;
+    const totalEvents = await prisma.event.count({ where: { organizerId } });
+    const totalVenues = (
+      await prisma.event.findMany({ where: { organizerId }, select: { venueId: true }, distinct: ['venueId'] })
+    ).length;
+    const totalTicketsSold = await prisma.ticket.count({ where: { eventSeat: { event: { organizerId } } } });
     const revenueAgg = await prisma.order.aggregate({
-      where: { status: 'CONFIRMED' },
+      where: { status: 'CONFIRMED', event: { organizerId } },
       _sum: { totalCents: true },
     });
     const totalRevenueCents = revenueAgg._sum.totalCents || 0;
 
-    const totalSeats = await prisma.eventSeat.count();
+    const totalSeats = await prisma.eventSeat.count({ where: { event: { organizerId } } });
     const overallOccupancyRate = totalSeats > 0 ? Math.round((totalTicketsSold / totalSeats) * 100) : 0;
 
     const events = await prisma.event.findMany({
+      where: { organizerId },
       include: { venue: { select: { name: true, layout: true } } },
       orderBy: { startsAt: 'asc' },
     });
+    const ownedIds = events.map((e) => e.id);
 
     // Aggregate in SQL instead of loading every seat of every event.
     // Lapsed-but-unswept holds are open seats, not held ones.
@@ -285,6 +227,7 @@ organizerRouter.get('/stats', async (_req: Request, res: Response, next: NextFun
              COUNT(*) FILTER (WHERE status = 'HELD'::"SeatStatus" AND "holdExpiresAt" >= NOW()) AS held,
              SUM(price) FILTER (WHERE status = 'SOLD'::"SeatStatus") AS revenue
       FROM "EventSeat"
+      WHERE "eventId" IN (${ownedIds.length ? Prisma.join(ownedIds) : Prisma.sql`NULL`})
       GROUP BY "eventId"
     `;
     const statsByEvent = new Map(seatStats.map((r) => [r.eventId, r]));
@@ -312,7 +255,7 @@ organizerRouter.get('/stats', async (_req: Request, res: Response, next: NextFun
     });
 
     const recentOrders = await prisma.order.findMany({
-      where: { status: 'CONFIRMED' },
+      where: { status: 'CONFIRMED', event: { organizerId } },
       include: {
         user: { select: { email: true } },
         event: { select: { title: true } },
@@ -363,9 +306,7 @@ organizerRouter.get('/events/:id/stats', async (req: Request, res: Response, nex
       },
     });
 
-    if (!event) {
-      return next(new AppError(404, 'Event not found'));
-    }
+    assertOwner(event, req.user!.userId);
 
     const totalSeats = event.eventSeats.length;
     const sold = event.eventSeats.filter((s) => s.status === SeatStatus.SOLD).length;
@@ -438,6 +379,8 @@ organizerRouter.get('/events/:id/stats', async (req: Request, res: Response, nex
         id: event.id,
         title: event.title,
         description: event.description,
+        location: event.location,
+        imageUrl: event.imageUrl,
         startsAt: event.startsAt,
         venueName: event.venue.name,
         venueType: (event.venue.layout as any)?.type || 'THEATER_DOLBY',

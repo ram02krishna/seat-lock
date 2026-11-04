@@ -43,6 +43,7 @@ model User {
 
   heldSeats    EventSeat[] @relation("HeldByUser")
   orders       Order[]
+  organizedEvents Event[]  @relation("OrganizerEvents")
 }
 
 model Venue {
@@ -60,9 +61,17 @@ model Event {
   id          String      @id @default(uuid())
   venueId     String
   venue       Venue       @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  // Owner of the event. Only this organizer may edit it. Nullable so deleting an organizer
+  // account never deletes events that customers have already bought tickets for.
+  organizerId String?
+  organizer   User?       @relation("OrganizerEvents", fields: [organizerId], references: [id], onDelete: SetNull)
   title       String
   description String?
+  location    String?
+  imageUrl    String?
   startsAt    DateTime
+  // Total seat capacity chosen by the organizer; always equals the number of EventSeat rows.
+  capacity    Int         @default(0)
   status      EventStatus @default(PUBLISHED)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -71,6 +80,7 @@ model Event {
   orders      Order[]
 
   @@index([venueId])
+  @@index([organizerId])
 }
 
 model Seat {

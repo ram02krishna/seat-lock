@@ -94,16 +94,110 @@ export const GenerateSeatsSchema = z.object({
 });
 export type GenerateSeatsInput = z.infer<typeof GenerateSeatsSchema>;
 
-export const CreateEventSchema = z.object({
-  venueId: z.string().optional(),
-  venueName: z.string().optional(),
-  venueType: VenueTypeEnum.optional().default('THEATER_DOLBY'),
-  title: z.string().min(2, 'Event title is required'),
-  description: z.string().optional(),
-  startsAt: z.string().datetime('Must be a valid ISO datetime string'),
-  pricing: z.record(z.number().int().positive()).optional(), // tier -> priceCents override
-});
+// ---- Event capacity / seating limits -------------------------------------------------------
+export const MAX_SEATS_PER_EVENT = 2000;
+export const MAX_SEATS_PER_ROW = 50;
+export const PRICING_TIERS = ['VIP', 'PREMIUM', 'STANDARD'] as const;
+export type PricingTier = (typeof PRICING_TIERS)[number];
+
+const seatCountSchema = z
+  .number({ invalid_type_error: 'Total seats must be a number' })
+  .int('Total seats must be a whole number')
+  .min(1, 'An event needs at least 1 seat')
+  .max(MAX_SEATS_PER_EVENT, `An event can have at most ${MAX_SEATS_PER_EVENT} seats`);
+
+const priceCentsSchema = z
+  .number({ invalid_type_error: 'Price must be a number' })
+  .int('Price must be a whole number of paise')
+  .positive('Price must be above zero');
+
+export const PricingSchema = z
+  .object({
+    VIP: priceCentsSchema.optional(),
+    PREMIUM: priceCentsSchema.optional(),
+    STANDARD: priceCentsSchema.optional(),
+  })
+  .strict();
+export type PricingInput = z.infer<typeof PricingSchema>;
+
+const httpUrlSchema = z
+  .string()
+  .trim()
+  .max(2000, 'Image URL is too long')
+  .url('Image must be a valid URL')
+  .refine((u) => /^https?:\/\//i.test(u), 'Image URL must start with http:// or https://');
+
+/** Accepts a URL, or '' / null to clear it. */
+const nullableImageSchema = z.union([
+  z.literal('').transform(() => null),
+  z.null(),
+  httpUrlSchema,
+]);
+
+const nullableTextSchema = (max: number, label: string) =>
+  z.union([
+    z
+      .string()
+      .trim()
+      .max(max, `${label} must be at most ${max} characters`)
+      .transform((v) => (v === '' ? null : v)),
+    z.null(),
+  ]);
+
+export const CreateEventSchema = z
+  .object({
+    /** @deprecated Seats are now generated per event from `totalSeats`; kept so old clients still validate. */
+    venueId: z.string().optional(),
+    venueName: z.string().trim().max(150).optional(),
+    venueType: VenueTypeEnum.optional().default('THEATER_DOLBY'),
+    title: z.string().trim().min(2, 'Event title is required').max(150, 'Title must be at most 150 characters'),
+    description: z.string().trim().max(5000, 'Description must be at most 5000 characters').optional(),
+    startsAt: z.string().datetime('Must be a valid ISO datetime string'),
+    location: nullableTextSchema(300, 'Location').optional(),
+    imageUrl: nullableImageSchema.optional(),
+    pricing: PricingSchema.optional(), // tier -> priceCents override
+    totalSeats: seatCountSchema,
+    seatsPerRow: z
+      .number()
+      .int('Seats per row must be a whole number')
+      .min(1, 'Seats per row must be at least 1')
+      .max(MAX_SEATS_PER_ROW, `Seats per row can be at most ${MAX_SEATS_PER_ROW}`)
+      .optional(),
+    vipSeats: z.number().int('VIP seats must be a whole number').min(0, 'VIP seats cannot be negative').optional(),
+    premiumSeats: z
+      .number()
+      .int('Premium seats must be a whole number')
+      .min(0, 'Premium seats cannot be negative')
+      .optional(),
+  })
+  .superRefine((val, ctx) => {
+    if ((val.vipSeats ?? 0) + (val.premiumSeats ?? 0) > val.totalSeats) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'VIP + Premium seats cannot exceed the total number of seats',
+        path: ['totalSeats'],
+      });
+    }
+  });
 export type CreateEventInput = z.infer<typeof CreateEventSchema>;
+
+export const UpdateEventSchema = z
+  .object({
+    title: z.string().trim().min(2, 'Event title is required').max(150, 'Title must be at most 150 characters').optional(),
+    description: nullableTextSchema(5000, 'Description').optional(),
+    startsAt: z.string().datetime('Must be a valid ISO datetime string').optional(),
+    venueName: z.string().trim().min(2, 'Venue name is required').max(150, 'Venue name must be at most 150 characters').optional(),
+    location: nullableTextSchema(300, 'Location').optional(),
+    imageUrl: nullableImageSchema.optional(),
+    pricing: PricingSchema.optional(),
+    totalSeats: seatCountSchema.optional(),
+    /** `updatedAt` the editor last saw; protects against overwriting someone else's newer edit. */
+    expectedUpdatedAt: z.string().datetime().optional(),
+    /** Must be true to save changes that affect customers who already hold tickets. */
+    confirm: z.boolean().optional(),
+  })
+  .strict();
+export type UpdateEventInput = z.infer<typeof UpdateEventSchema>;
 
 // Seat hold schemas
 export const HoldSeatsSchema = z.object({

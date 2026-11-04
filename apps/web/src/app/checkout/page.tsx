@@ -104,7 +104,7 @@ function CheckoutContent() {
         setError(err.message);
       } else {
         // Network trouble: keep the key so retrying is safe
-        setError('We couldn’t reach the server. Check your connection and try again.');
+        setError("We couldn't reach the server. Check your connection and try again.");
       }
     } finally {
       setIsSubmitting(false);

@@ -13,6 +13,8 @@ interface EventItem {
   id: string;
   title: string;
   description: string | null;
+  location?: string | null;
+  imageUrl?: string | null;
   startsAt: string;
   status: string;
   venue: { id: string; name: string; layout?: { type?: string } };
@@ -51,6 +53,11 @@ function EventRow({ event, onPrefetch }: { event: EventItem; onPrefetch: (id: st
           <span className="eyebrow mt-1 text-[10px] sm:text-[11px]">{monthFmt.format(date)}</span>
         </div>
 
+        {event.imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={event.imageUrl} alt="" loading="lazy" className="hidden h-auto w-28 shrink-0 object-cover sm:block" />
+        )}
+
         {/* Details */}
         <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 p-3.5 sm:flex-row sm:items-center sm:gap-6 sm:p-5">
           <div className="min-w-0 space-y-1.5 sm:space-y-2">
@@ -64,7 +71,10 @@ function EventRow({ event, onPrefetch }: { event: EventItem; onPrefetch: (id: st
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] sm:text-[13px] text-ink-3">
               <span className="inline-flex items-center gap-1">
                 <MapPin className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate max-w-[160px] sm:max-w-none">{event.venue.name}</span>
+                <span className="truncate max-w-[160px] sm:max-w-none">
+                  {event.venue.name}
+                  {event.location ? ` · ${event.location}` : ''}
+                </span>
               </span>
               <span>{timeFmt.format(date).toUpperCase()}</span>
             </p>

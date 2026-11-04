@@ -106,21 +106,20 @@ export async function finalizeOrder(orderId: string, seatIds?: string[]) {
     });
 
     // Generate unique tickets with cryptographic QR tokens
-    const createdTickets = [];
-    for (const es of heldSeats) {
-      const qrToken = crypto.randomUUID();
-      const ticket = await tx.ticket.create({
-        data: {
-          orderId: order.id,
-          eventSeatId: es.id,
-          qrToken,
-        },
-        include: {
-          eventSeat: { include: { seat: true } },
-        },
-      });
-      createdTickets.push(ticket);
-    }
+    const createdTickets = await Promise.all(
+      heldSeats.map((es) =>
+        tx.ticket.create({
+          data: {
+            orderId: order.id,
+            eventSeatId: es.id,
+            qrToken: crypto.randomUUID(),
+          },
+          include: {
+            eventSeat: { include: { seat: true } },
+          },
+        })
+      )
+    );
 
     return {
       order: updatedOrder,

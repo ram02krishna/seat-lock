@@ -99,9 +99,13 @@ export function CartPanel({ eventId, onHoldSuccess, onReleaseSuccess }: CartPane
     setIsLoading(true);
     setMessage(null);
     try {
+      const seatIds =
+        selectedSeats.length > 0
+          ? selectedSeats.map((s) => s.seatId || s.id)
+          : heldSeatIds;
       await apiFetch(`/api/events/${eventId}/release`, {
         method: 'POST',
-        body: JSON.stringify({ seatIds: selectedSeats.map((s) => s.seatId) }),
+        body: JSON.stringify({ seatIds }),
       });
       patchSeatCache('AVAILABLE', null);
       clearHold();

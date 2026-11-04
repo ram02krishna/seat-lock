@@ -299,7 +299,7 @@ export default function MyTicketsPage() {
               <p className="font-display text-lg sm:text-xl font-semibold">{enlarged.eventTitle}</p>
               <p className="text-sm font-medium text-accent">{enlarged.seatLabel}</p>
             </div>
-              <div className="mx-auto inline-block rounded-xl bg-white p-2 sm:p-3 ring-1 ring-black/10">
+            <div className="mx-auto inline-block rounded-xl bg-white p-2 sm:p-3 ring-1 ring-black/10">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={enlarged.qrDataUrl} alt="Ticket QR code" className="h-48 w-48 sm:h-60 sm:w-60 max-w-full aspect-square" />
             </div>

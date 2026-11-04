@@ -3,10 +3,13 @@ import { logger } from './logger';
 
 export class AppError extends Error {
   statusCode: number;
+  /** Extra machine-readable fields merged into the JSON error body (e.g. `code`, `impact`). */
+  details?: Record<string, unknown>;
 
-  constructor(statusCode: number, message: string) {
+  constructor(statusCode: number, message: string, details?: Record<string, unknown>) {
     super(message);
     this.statusCode = statusCode;
+    this.details = details;
     Object.setPrototypeOf(this, AppError.prototype);
   }
 }
@@ -22,7 +25,7 @@ export function errorHandler(
   _next: NextFunction
 ) {
   if (err instanceof AppError) {
-    return res.status(err.statusCode).json({ error: err.message });
+    return res.status(err.statusCode).json({ ...(err.details ?? {}), error: err.message });
   }
 
   // Malformed JSON / oversized bodies are the client's fault (body-parser sets status + type)

@@ -277,10 +277,18 @@ authRouter.post(
       }
 
       const passwordHash = await bcrypt.hash(newPassword, 10);
-      const updatedUser = await prisma.user.update({
-        where: { email },
-        data: { passwordHash },
-      });
+      let updatedUser;
+      try {
+        updatedUser = await prisma.user.update({
+          where: { email },
+          data: { passwordHash },
+        });
+      } catch (err: any) {
+        if (err.code === 'P2025') {
+          return next(new AppError(404, 'Account no longer exists. Please sign in or register.'));
+        }
+        throw err;
+      }
 
       await redisConnection.del(`pwd_reset:${email}`);
 

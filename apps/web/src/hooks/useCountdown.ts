@@ -20,18 +20,22 @@ export function useCountdown(expiresAt: string | null | undefined, onExpire?: ()
 
     const target = new Date(expiresAt).getTime();
     let fired = false;
+    let id: ReturnType<typeof setInterval>;
 
     const tick = () => {
       const secs = Math.max(0, Math.ceil((target - Date.now()) / 1000));
       setRemaining(secs);
-      if (secs === 0 && !fired) {
-        fired = true;
-        onExpireRef.current?.();
+      if (secs === 0) {
+        if (!fired) {
+          fired = true;
+          onExpireRef.current?.();
+        }
+        clearInterval(id);
       }
     };
 
     tick();
-    const id = setInterval(tick, 1000);
+    id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [expiresAt]);
 

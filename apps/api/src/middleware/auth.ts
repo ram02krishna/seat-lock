@@ -77,6 +77,14 @@ export function requireRole(allowedRoles: Role[]) {
       return next(new AppError(401, 'Authentication required'));
     }
 
+    // If requireAuth has already verified the user and attached the role, reuse it
+    if (req.user.role) {
+      if (!allowedRoles.includes(req.user.role)) {
+        return next(new AppError(403, 'Permission denied'));
+      }
+      return next();
+    }
+
     prisma.user
       .findUnique({
         where: { id: req.user.userId },

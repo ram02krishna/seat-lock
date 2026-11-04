@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, EyeOff, Plus, Search, Trash2, X } from 'lucide-react';
+import { Eye, EyeOff, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { formatINR, formatEventDateTime } from '@/lib/format';
 import { VenueBadge, VENUE_LABELS, VenueTypeKey } from '@/components/venue-badge';
+import { MAX_SEATS_PER_EVENT, MAX_SEATS_PER_ROW, optionalText, parseCount, previewSeating } from '@/lib/seating';
 
 const PRESETS: Record<VenueTypeKey, { venue: string; vip: string; premium: string; standard: string; blurb: string }> = {
   THEATER_DOLBY: { venue: 'Dolby Atmos Cinema', vip: '1200', premium: '700', standard: '400', blurb: 'Curved screen, recliners up front, centre aisle.' },
@@ -86,15 +87,18 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
   const [description, setDescription] = useState('');
   const [venueName, setVenueName] = useState(PRESETS.THEATER_DOLBY.venue);
   const [startsAt, setStartsAt] = useState('');
+  const [location, setLocation] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [totalSeats, setTotalSeats] = useState('60');
+  const [seatsPerRow, setSeatsPerRow] = useState('');
+  const [vipSeats, setVipSeats] = useState('');
+  const [premiumSeats, setPremiumSeats] = useState('');
   const [vip, setVip] = useState(PRESETS.THEATER_DOLBY.vip);
   const [premium, setPremium] = useState(PRESETS.THEATER_DOLBY.premium);
   const [standard, setStandard] = useState(PRESETS.THEATER_DOLBY.standard);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: venues } = useQuery<{ venues: Array<{ id: string; name: string }> }>({
-    queryKey: ['organizer', 'venues'],
-    queryFn: () => apiFetch('/api/organizer/venues'),
-  });
+  const seating = previewSeating(totalSeats, seatsPerRow, vipSeats, premiumSeats);
 
   function pickType(type: VenueTypeKey) {
     const wasDefaultName = Object.values(PRESETS).some((p) => p.venue === venueName.trim()) || !venueName.trim();
@@ -110,6 +114,7 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
       if (title.trim().length < 2) throw new Error('Give the event a title.');
       if (!venueName.trim()) throw new Error('Enter a venue name.');
       if (!startsAt) throw new Error('Pick a start date and time.');
+      if (seating.error || !seating.preview) throw new Error(seating.error || 'Check the seating numbers.');
       const when = new Date(startsAt);
       if (when.getTime() <= Date.now()) throw new Error('The start time needs to be in the future.');
 
@@ -118,18 +123,22 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
         PREMIUM: rupeesToPaise(premium, 'Premium'),
         STANDARD: rupeesToPaise(standard, 'Standard'),
       };
-      const existing = venues?.venues.find((v) => v.name.toLowerCase() === venueName.trim().toLowerCase());
 
       return apiFetch('/api/organizer/events', {
         method: 'POST',
         body: JSON.stringify({
-          venueId: existing?.id,
           venueName: venueName.trim(),
           venueType,
           title: title.trim(),
           description: description.trim() || undefined,
           startsAt: when.toISOString(),
+          location: optionalText(location),
+          imageUrl: optionalText(imageUrl),
           pricing,
+          totalSeats: parseCount(totalSeats),
+          seatsPerRow: parseCount(seatsPerRow),
+          vipSeats: parseCount(vipSeats),
+          premiumSeats: parseCount(premiumSeats),
         }),
       });
     },
@@ -211,6 +220,52 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
           <input value={description} onChange={(e) => setDescription(e.target.value)} className="field" />
         </div>
       </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          <label className="field-label">
+            Location <span className="font-normal text-ink-3">(optional)</span>
+          </label>
+          <input value={location} onChange={(e) => setLocation(e.target.value)} maxLength={300} placeholder="Street, area, city" className="field" />
+        </div>
+        <div>
+          <label className="field-label">
+            Image URL <span className="font-normal text-ink-3">(optional)</span>
+          </label>
+          <input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…" className="field" />
+        </div>
+      </div>
+
+      <fieldset className="space-y-3">
+        <legend className="field-label">Seating capacity</legend>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="field-label" htmlFor="total-seats">Total seats</label>
+            <input id="total-seats" type="number" min={1} max={MAX_SEATS_PER_EVENT} step={1} inputMode="numeric" value={totalSeats} onChange={(e) => setTotalSeats(e.target.value)} className="field tabular-nums" />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="seats-per-row">Seats per row <span className="font-normal text-ink-3">(auto)</span></label>
+            <input id="seats-per-row" type="number" min={1} max={MAX_SEATS_PER_ROW} step={1} inputMode="numeric" value={seatsPerRow} onChange={(e) => setSeatsPerRow(e.target.value)} placeholder={seating.preview ? String(seating.preview.seatsPerRow) : ''} className="field tabular-nums" />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="vip-seats">VIP seats <span className="font-normal text-ink-3">(auto)</span></label>
+            <input id="vip-seats" type="number" min={0} step={1} inputMode="numeric" value={vipSeats} onChange={(e) => setVipSeats(e.target.value)} placeholder={seating.preview ? String(seating.preview.vip) : ''} className="field tabular-nums" />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="premium-seats">Premium seats <span className="font-normal text-ink-3">(auto)</span></label>
+            <input id="premium-seats" type="number" min={0} step={1} inputMode="numeric" value={premiumSeats} onChange={(e) => setPremiumSeats(e.target.value)} placeholder={seating.preview ? String(seating.preview.premium) : ''} className="field tabular-nums" />
+          </div>
+        </div>
+        {seating.error ? (
+          <p className="text-xs text-danger">{seating.error}</p>
+        ) : (
+          seating.preview && (
+            <p className="text-xs text-ink-3 tabular-nums">
+              The seat map will have {totalSeats} seats in {seating.preview.rows} rows: {seating.preview.vip} VIP · {seating.preview.premium} Premium · {seating.preview.standard} Standard. Leave a field blank to let us choose.
+            </p>
+          )
+        )}
+      </fieldset>
 
       <div>
         <p className="field-label">Ticket prices</p>
@@ -424,7 +479,7 @@ export default function OrganizerDashboardPage() {
         ) : (
           <div className="card divide-y divide-line">
             {events.map((ev) => (
-              <div key={ev.id} className="grid gap-3 sm:gap-4 p-4 sm:p-5 md:grid-cols-[1fr_220px_130px] md:items-center">
+              <div key={ev.id} className="grid gap-3 sm:gap-4 p-4 sm:p-5 md:grid-cols-[1fr_220px_150px] md:items-center">
                 <div className="min-w-0 space-y-1.5">
                   <VenueBadge type={ev.venueType} />
                   <Link href={`/organizer/events/${ev.id}`} className="block truncate font-display text-lg sm:text-xl font-semibold hover:text-accent">
@@ -447,9 +502,15 @@ export default function OrganizerDashboardPage() {
 
                 <div className="flex items-center justify-between gap-3 md:block md:text-right border-t border-line/60 pt-2 md:border-0 md:pt-0">
                   <p className="font-semibold tabular-nums text-sm sm:text-base">{formatINR(ev.revenueCents)}</p>
-                  <Link href={`/events/${ev.id}`} className="text-xs text-ink-3 underline hover:text-ink">
-                    Public page
-                  </Link>
+                  <div className="flex items-center gap-3 md:justify-end">
+                    <Link href={`/organizer/events/${ev.id}/edit`} className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">
+                      <Pencil className="h-3 w-3" />
+                      Edit
+                    </Link>
+                    <Link href={`/events/${ev.id}`} className="text-xs text-ink-3 underline hover:text-ink">
+                      Public page
+                    </Link>
+                  </div>
                 </div>
               </div>
             ))}

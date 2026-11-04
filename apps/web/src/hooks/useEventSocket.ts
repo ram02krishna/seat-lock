@@ -129,6 +129,13 @@ export function useEventSocket(eventId: string) {
       );
     };
 
+    // The organizer edited the event (capacity, prices, date...): reload the seat map and listings
+    const onEventUpdated = () => {
+      queryClient.invalidateQueries({ queryKey: ['events', eventId, 'seats'] });
+      queryClient.invalidateQueries({ queryKey: ['events'], exact: true });
+    };
+
+    socket.on('event:updated', onEventUpdated);
     socket.on('seats:held', onSeatsHeld);
     socket.on('seats:released', onSeatsReleased);
     socket.on('seats:sold', onSeatsSold);
@@ -136,6 +143,7 @@ export function useEventSocket(eventId: string) {
     return () => {
       socket.off('connect', joinRoom);
       socket.io.off('reconnect', handleReconnect);
+      socket.off('event:updated', onEventUpdated);
       socket.off('seats:held', onSeatsHeld);
       socket.off('seats:released', onSeatsReleased);
       socket.off('seats:sold', onSeatsSold);

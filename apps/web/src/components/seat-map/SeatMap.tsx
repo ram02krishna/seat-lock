@@ -200,12 +200,13 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
     if (heldSeatIds.length > 0 || selectedSeats.length === 0) return;
     const lost = selectedSeats.filter((sel) => {
       const live = seatById.get(sel.id);
-      return !!live && (live.status === 'SOLD' || (live.status === 'HELD' && !live.isHeldByMe));
+      // A seat that no longer exists was removed by the organizer (capacity reduced)
+      return !live || live.status === 'SOLD' || (live.status === 'HELD' && !live.isHeldByMe);
     });
     if (lost.length === 0) return;
     removeSeats(lost.map((s) => s.id));
     showFlash(
-      `${lost.map((s) => `${s.row}${s.number}`).join(', ')} ${lost.length === 1 ? 'was' : 'were'} just taken, so we removed ${lost.length === 1 ? 'it' : 'them'} from your selection.`,
+      `${lost.map((s) => `${s.row}${s.number}`).join(', ')} ${lost.length === 1 ? 'is' : 'are'} no longer available, so we removed ${lost.length === 1 ? 'it' : 'them'} from your selection.`,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seatById]);
@@ -404,7 +405,8 @@ export function SeatMap({ seats, venueLayout }: SeatMapProps) {
           aria-label="Seat map"
           style={{
             width: `${zoom * 100}%`,
-            minWidth: `${Math.round(680 * zoom)}px`,
+            // Wider maps (more seats per row) get more room so seats stay a tappable size
+            minWidth: `${Math.round(Math.max(680, (x1 - x0) * 0.8) * zoom)}px`,
             height: 'auto',
             display: 'block',
             touchAction: 'pan-x pan-y',

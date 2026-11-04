@@ -12,6 +12,7 @@ export async function ensureDefaultOrganizer() {
 
     if (existingOrganizer) {
       logger.info(`Organizer account verified: ${existingOrganizer.email}`);
+      await assignOrphanEvents(existingOrganizer.id);
       return;
     }
 
@@ -27,6 +28,7 @@ export async function ensureDefaultOrganizer() {
         data: { role: Role.ORGANIZER },
       });
       logger.info(`Promoted existing user ${email} to Organizer`);
+      await assignOrphanEvents(existingUser.id);
       return;
     }
 
@@ -41,7 +43,17 @@ export async function ensureDefaultOrganizer() {
     });
 
     logger.info(`Created default single Organizer account: ${organizer.email}`);
+    await assignOrphanEvents(organizer.id);
   } catch (err: any) {
     logger.error(err, 'Failed to ensure default organizer account');
   }
+}
+
+/** Events created before ownership existed (or whose organizer was deleted) go to a live organizer. */
+async function assignOrphanEvents(organizerId: string) {
+  const { count } = await prisma.event.updateMany({
+    where: { organizerId: null },
+    data: { organizerId },
+  });
+  if (count > 0) logger.info(`Assigned ${count} ownerless event(s) to organizer ${organizerId}`);
 }

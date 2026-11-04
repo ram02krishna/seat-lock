@@ -68,3 +68,10 @@ export function broadcastSeatsSold(eventId: string, data: { seatIds: string[] })
     io.to(`event:${eventId}`).emit('seats:sold', data);
   }
 }
+
+/** Tells everyone viewing an event that its details or seat layout changed and should be refetched. */
+export function broadcastEventUpdated(eventId: string) {
+  if (io) {
+    io.to(`event:${eventId}`).emit('event:updated', { eventId });
+  }
+}

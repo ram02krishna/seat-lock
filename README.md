@@ -188,6 +188,7 @@ git clone https://github.com/ram02krishna/seat-lock.git
 cd seat-lock
 pnpm install
 ```
+The API generates Prisma Client during installation. If you change the Prisma schema later, regenerate it with `pnpm --filter api prisma:generate`.
 
 ### 2. Environment Variables
 Copy `.env.example` to `.env` in the root and in `apps/api`:
@@ -322,3 +323,36 @@ pnpm --filter api run prisma:seed
 
 Detailed instructions for deploying the frontend on **Vercel** and connecting it to the production API server are documented in [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md).
 
+
+## Event editing & dynamic seat capacity
+
+**Ownership.** Every event records the organizer who created it (`Event.organizerId`). Only that organizer can edit it
+(`GET/PUT /api/organizer/events/:id`); other organizers get `403`, customers get `403`/`401`. The check runs on the backend,
+inside the same transaction as the update. Dashboard stats are also scoped to the signed-in organizer's own events.
+Events that existed before this change are assigned to the earliest organizer account by the migration (and, for any
+orphaned events, again at server start).
+
+**Capacity drives the seat map.** There is no fixed seat count. When creating an event the organizer sets `totalSeats`
+(1–2000), and optionally `seatsPerRow`, `vipSeats` and `premiumSeats` (the rest are Standard). The API generates the seats
+(unique `section/row/number`, x/y coordinates) and a layout for the chosen venue style, and every event gets its own venue
+record, so capacities never affect one another. `Event.capacity` always equals the number of `EventSeat` rows; this is
+verified at the end of every edit transaction.
+
+**What an edit may change** (`PUT /api/organizer/events/:id`, all fields optional): title, description, date/time, venue name,
+location, image URL, per-tier prices and total seats.
+
+| Change | Rule |
+| --- | --- |
+| Capacity up | New seats are added to the rear tier (filling the last row first, then new rows). Existing seats are never moved or renumbered. |
+| Capacity down | Only open seats are removed, from the back. Sold seats and seats with a live hold are never removed; the API answers `409 CAPACITY_BELOW_BOOKED` with `minCapacity`. Deletion is guarded in SQL, so a seat grabbed a moment earlier aborts the whole edit. |
+| Prices | Applied to open seats only. Sold seats and seats currently held keep their price, so tickets and carts never change retroactively. The response reports how many seats kept the old price; saving again after holds expire applies it to the rest. |
+| Date, venue, location | If tickets are already sold the API returns `409 CONFIRMATION_REQUIRED` until the request carries `confirm: true`; ticket holders are then emailed. |
+| Concurrent edits | `expectedUpdatedAt` is checked; a stale form gets `409 STALE_EVENT`. Edits are serialized with a row lock on the event. |
+| Started / cancelled events | Cannot be edited (`409`). |
+
+Seat availability is still decided by the existing atomic hold/confirm queries (unique `EventSeat(eventId, seatId)` and
+`Ticket.eventSeatId`), so a seat can't be double-booked. After an edit the API clears the events cache and emits an
+`event:updated` socket message so open seat maps and listings reload.
+
+Run `pnpm --filter api check:layout` for the seat-layout sanity checks. Apply the new migration with
+`pnpm --filter api exec prisma migrate deploy` (or `pnpm db:migrate` in development).

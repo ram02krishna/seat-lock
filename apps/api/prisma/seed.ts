@@ -9,6 +9,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import { PrismaClient, Role, EventStatus, SeatStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { getVenueTemplate } from '../src/services/venueTemplates.service';
+import { buildSeatPlan } from '../src/services/seatLayout.service';
 
 const prisma = new PrismaClient();
 
@@ -57,9 +58,10 @@ async function main() {
 
   console.log('Created users: organizer, staff, customer');
 
-  // Helper to create a venue with template seats and an event
+  // Helper to create a venue + event. Capacity is chosen per event; the seat map is generated from it.
   async function createVenueWithEvent(
     type: 'THEATER_DOLBY' | 'CONFERENCE_HALL' | 'AUDITORIUM' | 'ARENA',
+    totalSeats: number,
     eventTitle: string,
     eventDesc: string,
     daysAhead: number,
@@ -67,16 +69,16 @@ async function main() {
     minutes: number
   ) {
     const template = getVenueTemplate(type);
+    const plan = buildSeatPlan({ venueType: type, totalSeats });
 
     const venue = await prisma.venue.create({
       data: {
         name: template.defaultName,
-        layout: template.layout as any,
+        layout: plan.layout as any,
       },
     });
 
-    const seatDefs = template.generateSeats(venue.id);
-    await prisma.seat.createMany({ data: seatDefs, skipDuplicates: true });
+    await prisma.seat.createMany({ data: plan.seats.map((s) => ({ ...s, venueId: venue.id })) });
     const createdSeats = await prisma.seat.findMany({ where: { venueId: venue.id } });
 
     const startsAt = new Date();
@@ -86,9 +88,11 @@ async function main() {
     const event = await prisma.event.create({
       data: {
         venueId: venue.id,
+        organizerId: organizer.id,
         title: eventTitle,
         description: eventDesc,
         startsAt,
+        capacity: createdSeats.length,
         status: EventStatus.PUBLISHED,
       },
     });
@@ -107,6 +111,7 @@ async function main() {
   // 1. Dolby Atmos Theater
   await createVenueWithEvent(
     'THEATER_DOLBY',
+    60,
     'Midnight Screening: The Last Monsoon',
     'A late-night screening of the award-winning drama in Dolby Atmos, with recliner seating up front.',
     7,
@@ -117,6 +122,7 @@ async function main() {
   // 2. Corporate Conference Hall
   await createVenueWithEvent(
     'CONFERENCE_HALL',
+    150,
     'Distributed Systems India Summit 2026',
     'A full day of talks on scaling databases, queues and real-time systems, with lunch and a hallway track.',
     14,
@@ -127,6 +133,7 @@ async function main() {
   // 3. Grand Auditorium
   await createVenueWithEvent(
     'AUDITORIUM',
+    240,
     'City Philharmonic: An Evening of Rachmaninoff',
     'The City Philharmonic performs the Second Piano Concerto and Symphonic Dances. One interval.',
     21,
@@ -137,6 +144,7 @@ async function main() {
   // 4. Live Concert Arena
   await createVenueWithEvent(
     'ARENA',
+    400,
     'Indie Fest Live: Headline Night',
     'Four bands, one stage and a runway through the front pit. Doors open two hours before the headliner.',
     28,
