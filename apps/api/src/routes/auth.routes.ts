@@ -200,11 +200,9 @@ authRouter.post(
 
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user) {
-        // Same response as success, so this endpoint can't be used to discover who has an account
-        return res.status(200).json({
-          message: 'If an account exists for that email, a reset code is on its way.',
-          email,
-        });
+        return next(
+          new AppError(404, 'Account with this email does not exist. Please create an account first.')
+        );
       }
 
       const otp = generateOtp();

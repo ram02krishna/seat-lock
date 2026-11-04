@@ -130,6 +130,7 @@ function LoginForm() {
   async function run(fn: () => Promise<void>, fallbackError: string) {
     setIsLoading(true);
     setError(null);
+    setInfo(null);
     try {
       await fn();
     } catch (err: any) {
@@ -319,10 +320,15 @@ function LoginForm() {
             <button type="submit" disabled={isLoading} className="btn btn-primary w-full">
               {isLoading ? 'Sending code…' : 'Send reset code'}
             </button>
-            <button type="button" onClick={() => switchMode('login')} className="inline-flex w-full items-center justify-center gap-1 text-[13px] text-ink-3 hover:text-ink">
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to sign in
-            </button>
+            <div className="flex items-center justify-between text-[13px]">
+              <button type="button" onClick={() => switchMode('login')} className="inline-flex items-center gap-1 text-ink-3 hover:text-ink">
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to sign in
+              </button>
+              <button type="button" onClick={() => switchMode('register')} className="text-accent hover:underline">
+                Create account
+              </button>
+            </div>
           </form>
         )}
 
