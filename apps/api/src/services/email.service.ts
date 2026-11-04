@@ -37,7 +37,7 @@ export async function sendTicketConfirmationEmail(params: SendTicketsEmailParams
 
   const viewTicketsUrl =
     config.CLIENT_TICKETS_URL ||
-    'https://seat-lock.vercel.app/my-tickets';
+    'https://seatlock-event-seat-booking.vercel.app/my-tickets';
 
   const qrBaseUrl =
     config.QR_CODE_API_URL ||
@@ -402,7 +402,8 @@ export interface SendEventUpdatedEmailParams {
 /** Tells ticket holders that the date or place of an event they booked has changed. */
 export async function sendEventUpdatedEmail(params: SendEventUpdatedEmailParams) {
   const { toEmail, eventTitle, startsAt, venueName, location, changes } = params;
-  const viewTicketsUrl = config.CLIENT_TICKETS_URL || 'https://seat-lock.vercel.app/my-tickets';
+  const viewTicketsUrl =
+    config.CLIENT_TICKETS_URL || 'https://seatlock-event-seat-booking.vercel.app/my-tickets';
   const formattedDate = new Date(startsAt).toLocaleString('en-IN', {
     weekday: 'long',
     day: 'numeric',
