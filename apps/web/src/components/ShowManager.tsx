@@ -115,7 +115,8 @@ export function ShowManager({
           startsAt: validated.startsAt,
           pricing: validated.pricing,
         };
-        onChange?.(editingShow ? shows.map((s) => (s.id === editingShow.id ? next : s)) : [...shows, next]);
+        const updated = editingShow ? shows.map((s) => (s.id === editingShow.id ? next : s)) : [...shows, next];
+        onChange?.(sortShows(updated));
         return { notifiedCustomers: 0 };
       }
       if (!eventId) throw new Error('Missing event.');
@@ -156,7 +157,7 @@ export function ShowManager({
   const deleteShow = useMutation({
     mutationFn: async (show: ShowTimingItem) => {
       if (!isLive) {
-        onChange?.(shows.filter((s) => s.id !== show.id));
+        onChange?.(sortShows(shows.filter((s) => s.id !== show.id)));
         return;
       }
       await apiFetch(`/api/organizer/events/${eventId}/shows/${show.id}`, { method: 'DELETE' });
