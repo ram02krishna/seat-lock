@@ -277,11 +277,14 @@ eventsRouter.get('/:id/seats', async (req: Request, res: Response, next: NextFun
       };
     });
 
+    // Ensure strict ascending chronological order (earliest show first)
+    showsWithStats.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+
     let activeShowId = requestedShowId;
-    if (!activeShowId && shows.length > 0) {
-      // Pick first upcoming show, or earliest show
-      const upcoming = shows.find((s) => new Date(s.startsAt).getTime() > Date.now());
-      activeShowId = upcoming ? upcoming.id : shows[0]!.id;
+    if (!activeShowId && showsWithStats.length > 0) {
+      // Pick first upcoming show chronologically, or earliest show
+      const upcoming = showsWithStats.find((s) => new Date(s.startsAt).getTime() > Date.now());
+      activeShowId = upcoming ? upcoming.id : showsWithStats[0]!.id;
     }
 
     // Fetch seats specifically for this show, or eventSeats where showId is null / any

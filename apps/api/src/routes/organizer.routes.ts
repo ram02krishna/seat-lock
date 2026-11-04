@@ -295,7 +295,10 @@ organizerRouter.get('/stats', async (_req: Request, res: Response, next: NextFun
 
     const events = await prisma.event.findMany({
       where: { organizerId },
-      include: { venue: { select: { name: true, layout: true } } },
+      include: {
+        venue: { select: { name: true, layout: true } },
+        shows: { orderBy: { startsAt: 'asc' } },
+      },
       orderBy: { startsAt: 'asc' },
     });
     const ownedIds = events.map((e) => e.id);
@@ -322,11 +325,12 @@ organizerRouter.get('/stats', async (_req: Request, res: Response, next: NextFun
       const sold = Number(st?.sold ?? 0);
       const held = Number(st?.held ?? 0);
       const occupancyRate = total > 0 ? Math.round((sold / total) * 100) : 0;
+      const effectiveStartsAt = ev.shows && ev.shows.length > 0 ? ev.shows[0]!.startsAt : ev.startsAt;
 
       return {
         id: ev.id,
         title: ev.title,
-        startsAt: ev.startsAt,
+        startsAt: effectiveStartsAt,
         venueName: ev.venue.name,
         venueType: (ev.venue.layout as any)?.type || 'THEATER_DOLBY',
         location: ev.location,
@@ -338,6 +342,8 @@ organizerRouter.get('/stats', async (_req: Request, res: Response, next: NextFun
         revenueCents: Number(st?.revenue ?? 0),
       };
     });
+
+    eventStats.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
 
     const recentOrders = await prisma.order.findMany({
       where: { status: 'CONFIRMED', event: { organizerId } },

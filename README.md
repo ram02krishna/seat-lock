@@ -1,22 +1,23 @@
 # Concurrency-Safe Event Ticketing with an Interactive Seat Map
 
-A full-stack, concurrency-safe event ticketing platform built to handle flash-sale traffic spikes, interactive SVG venue seating, and venue gate check-in with zero double bookings.
+A production-ready, full-stack, concurrency-safe event ticketing platform built to handle flash-sale traffic spikes, interactive SVG venue seating, multi-showtime cinema scheduling, and venue gate turnstile check-in with zero double bookings.
 
-Designed and built as a college capstone project showcasing transaction isolation, raw SQL atomic locking, real-time WebSocket synchronization, delayed worker queues, and high-concurrency load testing.
+Designed and built as a high-performance system showcasing transaction isolation, raw SQL atomic locking, real-time WebSocket synchronization, delayed worker queues, cinema multi-showtime management, and high-concurrency load testing.
 
 ---
 
 ## The Problem
 
-High-demand ticket sales (concerts, sports, festivals) suffer from a classic distributed systems challenge: **extreme contention on shared state**. 
+High-demand ticket sales (concerts, sports, festivals, movie premieres) suffer from a classic distributed systems challenge: **extreme contention on shared state**. 
 
-When thousands of users click the same front-row seat at the exact same millisecond:
+When thousands of users click the same seat at the exact same millisecond:
 1. **Double-Booking**: Naive implementations read seat state, verify availability in application memory, and then write. Under concurrent traffic, multiple users read "available" simultaneously, creating double bookings.
 2. **Deadlocks**: Users selecting multiple seats in different order (e.g., User A selects `[1, 2]`, User B selects `[2, 1]`) can lock rows in opposite order, crashing the database with circular deadlocks.
 3. **Cart Abandonment**: If users hold seats but never complete payment, seats stay locked forever unless released by an authoritative background scheduler.
 4. **Gate Turnstile Race Conditions**: Fraudsters duplicating QR codes can try to scan through two venue turnstiles at the same instant.
+5. **Multi-Showtime Schedule Inconsistencies**: Movie theaters running multiple shows per day require isolated seat inventories per showtime while preserving chronological date and time sorting from morning to night.
 
-This project solves all four problems with database-level atomicity, deterministic lock ordering, BullMQ delayed workers, and conditional gate check-in.
+This project solves these problems with database-level atomicity, deterministic lock ordering, BullMQ delayed workers, conditional gate check-in, and chronological multi-show management.
 
 ---
 
@@ -26,12 +27,14 @@ This project solves all four problems with database-level atomicity, determinist
                        +---------------------------------------+
                        |          Next.js App Router           |
                        |  - Interactive SVG Seat Map           |
+                       |  - Multi-Showtime Cinema Selector     |
                        |  - Server-Authoritative Hold Timer    |
                        |  - Real-Time Socket.IO Client         |
+                       |  - Event-Wise Ticket Print Engine     |
                        |  - Staff Camera Turnstile Scanner     |
                        +-------------------+-------------------+
                                            |
-                              HTTP / WebSocket (Port 4000)
+                               HTTP / WebSocket (Port 4000)
                                            |
                                            v
                        +---------------------------------------+
@@ -39,7 +42,8 @@ This project solves all four problems with database-level atomicity, determinist
                        |  - Zod Input Validation               |
                        |  - JWT HttpOnly Cookie Auth           |
                        |  - Socket.IO Per-Event Rooms          |
-                       |  - Resend Email Service               |
+                       |  - Resend Email Service (IST Timezone)|
+                       |  - Cinema Show Scheduler (Sorted)     |
                        +---------+-------------------+---------+
                                  |                   |
                Atomic $queryRaw  |                   | Delayed Jobs
@@ -48,7 +52,8 @@ This project solves all four problems with database-level atomicity, determinist
             +---------------------------+   +-------------------+
             |        PostgreSQL         |   |   Redis (BullMQ)  |
             |  - EventSeat (Unique idx) |   |  - 5-Min Expiry   |
-            |  - Atomic UPDATE ...      |   |  - 60s Sweeper    |
+            |  - Multi-Showtime Show    |   |  - 60s Sweeper    |
+            |  - Atomic UPDATE ...      |   |  - Micro-Caching  |
             |  - Ticket QR Tokens       |   +-------------------+
             +---------------------------+
 ```
@@ -113,6 +118,31 @@ If two scanners submit the same QR token concurrently, only the first query upda
 
 ---
 
+## Cinema Multi-Showtime System (BookMyShow Experience)
+
+For cinema auditoriums and theaters (`THEATER_DOLBY`), events feature multiple showtimes per day:
+
+1. **Strict Chronological Sorting by Date and Time**:
+   - Show dates are organized into chronological selector tabs (`Today`, `Tom`, weekday/day/month).
+   - Within each date, showtimes are strictly sorted in ascending chronological order from morning to afternoon to night (e.g. `9:50 am` → `10:30 am` → `12:30 pm` → `10:30 pm`).
+   - Default showtime selection automatically picks the earliest upcoming available show.
+2. **Independent Seat Inventories & Layouts**:
+   - Each showtime has its own full seat map and independent seat states (`AVAILABLE`, `HELD`, `SOLD`).
+   - Custom tier pricing overrides per showtime (`VIP`, `PREMIUM`, `STANDARD`).
+3. **Live Availability Telemetry**:
+   - Shows badge counts and real-time status indicators (`Available`, `Selling fast`, `Sold out`).
+
+---
+
+## Event-Wise Ticket Printing & Physical Gate Passes
+
+On the **My Tickets** portal (`/my-tickets`), ticket printing is isolated on an individual event basis:
+- **Event-Specific Print Buttons**: Every order card features a dedicated `Print tickets` action. Clicking it isolates **only** that event's tickets, preventing other orders from spilling onto paper.
+- **Dynamic Venue & Location**: Displays both the Venue Name and exact Street Address/Location dynamically.
+- **Professional Print Styles**: Utilizes CSS `@page`, `print-color-adjust: exact`, high-resolution QR codes, individual ticket codes, gate scan instructions, and `page-break-inside: avoid` to prevent awkward cutoffs across sheets.
+
+---
+
 ## Concurrency Stress Benchmark
 
 The concurrency engine was benchmarked with 1,000 rapid concurrent hold requests from 200 distinct virtual users racing simultaneously for a pool of 50 seats.
@@ -163,13 +193,13 @@ seat-lock/
 │   └── web/                    # Next.js frontend
 │       └── src/
 │           ├── app/
-│           │   ├── events/[id] # Event details & interactive SVG seat map
+│           │   ├── events/[id] # Event details, multi-showtime selector & SVG seat map
 │           │   ├── checkout/   # Checkout with server-authoritative timer
-│           │   ├── my-tickets/ # Attendee ticket wallet with QR codes
-│           │   ├── organizer/  # Real-time analytics, revenue, capacity dashboard
+│           │   ├── my-tickets/ # Event-wise ticket wallet & print engine
+│           │   ├── organizer/  # Real-time analytics, revenue, capacity, multi-show manager
 │           │   ├── staff/      # Turnstile camera scanner UI (html5-qrcode)
-│           │   └── login/      # Auth screen with 1-click demo logins
-│           ├── components/     # SVG seat map, pan/zoom, cart, navbar
+│           │   └── login/      # Auth screen with 1-click demo logins & OTP recovery
+│           ├── components/     # SVG seat map, CinemaShowSelector, ShowManager, Navbar
 │           └── store/          # Zustand cart store
 │
 ├── packages/
@@ -205,7 +235,7 @@ JWT_SECRET="supersecretdevkey1234567890_min32chars"
 ```
 
 ### 3. Database Migration & Seed
-Run Prisma migrations and populate the seed data (Grand Symphony Hall, 112 seats across VIP, Premium, and Standard tiers, plus 2 sample events):
+Run Prisma migrations and populate the seed data (Grand Symphony Hall, 112 seats across VIP, Premium, and Standard tiers, plus sample events):
 ```bash
 pnpm db:migrate   # or: pnpm db:push
 pnpm seed         # or: pnpm db:seed
@@ -227,7 +257,7 @@ When running your Next.js and Express apps locally with hot-reload via `pnpm dev
 ```bash
 docker compose up -d    # or: pnpm db:up
 ```
-This spins up only `event_booking_postgres` (port 5432) and `event_booking_redis` (port 6379), completely avoiding any port 4000/3000 collisions with your local dev server.
+This spins up only `event_booking_postgres` (port 5432) and `event_booking_redis` (port 6379), completely avoiding port collisions with your local dev server.
 
 ### 2. Full Containerized Stack (Postgres, Redis, Express API, Next.js Web)
 To run the entire platform inside Docker containers:
@@ -237,8 +267,6 @@ docker compose --profile app up -d --build   # or: pnpm docker:full
 - Web: [http://localhost:3001](http://localhost:3001)
 - API: [http://localhost:4000](http://localhost:4000)
 
-*(Note: If port 4000 is occupied by a local process, you can set `DOCKER_API_PORT=4001` in your `.env`)*
-
 To stop all containers:
 ```bash
 docker compose down   # or: pnpm db:down
@@ -246,39 +274,13 @@ docker compose down   # or: pnpm db:down
 
 ---
 
-## Code Quality & Typecheck
-
-```bash
-# Run full monorepo typecheck:
-pnpm typecheck
-
-# Run production build:
-pnpm build
-```
-
----
-
 ## Role Hierarchy & Access Control
-
-The platform enforces a real-world role and security hierarchy:
 
 | Role | Provisioning | Default / Access | Permissions & Features |
 |---|---|---|---|
-| **ORGANIZER** | **Single Administrative Account** | `organizer@eventseat.com`<br>*(Password: `password123`)* | Access `/organizer` dashboard, view live revenue & occupancy analytics, create events & venues, manage ticket pricing tiers, and provision staff accounts |
+| **ORGANIZER** | **Single Administrative Account** | `organizer@eventseat.com`<br>*(Password: `password123`)* | Access `/organizer` dashboard, view live revenue & occupancy analytics, create events & venues, schedule multiple showtimes, manage ticket pricing tiers, and provision staff accounts |
 | **STAFF** | **Created Exclusively by Organizer** | Provisioned via `/organizer` dashboard | Access `/staff/scanner` live camera QR code turnstile scanner, manual UUID validation, and real-time check-in |
-| **CUSTOMER** | **Public Self-Registration** | Self-signup via `/login` (Register tab) | Browse events, interact with live SVG seat map, hold seats for 5 mins, checkout, view digital tickets with UUIDs, and receive QR emails |
-
-> **Security Note:** Public registration (`POST /api/auth/register/verify-otp`) strictly assigns the `CUSTOMER` role to prevent unauthorized access to organizer and administrative consoles. Only the authenticated Organizer can provision gate Staff accounts.
-
-### Default Testing Credentials (Local Development Only)
-
-These demo credentials are for a local development database only. Do not use them in production; production startup requires a dedicated organizer email and a unique password of at least 16 characters. The demo seed script deletes existing records and refuses to run with `NODE_ENV=production`.
-
-| Role | Email | Password | Primary Portal / Route |
-|---|---|---|---|
-| **ORGANIZER** | `organizer@eventseat.com` | `password123` | `/organizer` (Dashboard, revenue telemetry, staff manager) |
-| **STAFF** | `staff@eventseat.com` | `password123` | `/staff/scanner` (Gate camera QR scanner & turnstile check-in) |
-| **CUSTOMER** | `customer@eventseat.com` | `password123` | `/` & `/my-tickets` (Browse, hold seats, checkout, QR tickets) |
+| **CUSTOMER** | **Public Self-Registration** | Self-signup via `/login` (Register tab) | Browse events, select cinema dates & showtimes, interact with live SVG seat map, hold seats for 5 mins, checkout, view/print digital tickets with QR passes |
 
 ---
 
@@ -289,70 +291,37 @@ These demo credentials are for a local development database only. Do not use the
 | `POST` | `/api/auth/register/send-otp` | Send 6-digit OTP to email for signup | Public |
 | `POST` | `/api/auth/register/verify-otp` | Verify OTP & create customer account | Public |
 | `POST` | `/api/auth/login` | Login with email and password | Public |
+| `POST` | `/api/auth/forgot-password` | Request password reset code | Public |
+| `POST` | `/api/auth/reset-password` | Verify code and reset password | Public |
 | `POST` | `/api/auth/logout` | Clear session cookie | Public |
 | `GET` | `/api/auth/me` | Fetch authenticated user profile & role | Authenticated |
-| `GET` | `/api/events` | List all published events | Public |
-| `GET` | `/api/events/:id/seats` | Get seat map layout and real-time availability | Public |
+| `GET` | `/api/events` | List all published events (cached with micro-TTL) | Public |
+| `GET` | `/api/events/:id/seats` | Get seat map, showtimes (sorted), and availability | Public |
 | `POST` | `/api/events/:id/hold` | Atomically hold seats for 5 minutes (Redis + DB lock) | Customer |
 | `POST` | `/api/events/:id/release` | Release held seats manually | Customer |
 | `POST` | `/api/orders/confirm` | Finalize payment, generate QR tickets & dispatch email | Customer |
-| `GET` | `/api/orders/my-tickets` | List user confirmed orders with QR codes & UUIDs | Customer |
+| `GET` | `/api/orders/my-tickets` | List user confirmed orders with QR codes & location | Customer |
 | `POST` | `/api/tickets/checkin` | Turnstile QR code token or UUID check-in verification | Staff / Organizer |
 | `GET` | `/api/organizer/stats` | Aggregate revenue, occupancy, and event analytics | Organizer |
-| `GET` | `/api/organizer/events/:id/stats` | Event tier breakdown and gate check-in telemetry | Organizer |
-| `POST` | `/api/organizer/events` | Create new event with custom venue and tier pricing | Organizer |
+| `GET` | `/api/organizer/events/:id` | Event tier breakdown and edit prefill | Organizer |
+| `POST` | `/api/organizer/events` | Create new event with custom venue & showtimes | Organizer |
+| `POST` | `/api/organizer/events/:id/shows` | Add a new showtime to an existing cinema event | Organizer |
+| `PUT` | `/api/organizer/events/:id/shows/:showId` | Update showtime date, time, or tier pricing | Organizer |
+| `DELETE` | `/api/organizer/events/:id/shows/:showId` | Remove a showtime (guarded against sold seats) | Organizer |
 | `GET` | `/api/organizer/staff` | List active gate staff accounts | Organizer |
-| `POST` | `/api/organizer/staff` | Provision a new gate staff member (`email`, `password`) | Organizer |
+| `POST` | `/api/organizer/staff` | Provision a new gate staff member | Organizer |
 | `DELETE` | `/api/organizer/staff/:id` | Revoke a gate staff account | Organizer |
 
 ---
 
-## Database Management & Clean Scripts
+## Event Editing & Dynamic Capacity
 
-```bash
-# Wipe test accounts, orders, tickets, and reset all seats to 100% AVAILABLE:
-pnpm --filter api run db:clean
-
-# Re-seed baseline venue, seats, and sample events:
-pnpm --filter api run prisma:seed
-```
+- **Organizer Ownership**: Every event is strictly scoped to `Event.organizerId`. Edits and stats enforce owner authorization.
+- **Capacity-Driven Seat Generation**: Total seats (1–2000), seats per row, and tier allotments generate deterministic physical seats.
+- **Safe Modifications**: Capacity increases append new rows at the rear. Capacity reductions only delete unbooked seats. Date/venue shifts alert ticket holders with Indian Standard Time email updates.
 
 ---
 
 ## Deployment
 
 Detailed instructions for deploying the frontend on **Vercel** and connecting it to the production API server are documented in [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md).
-
-
-## Event editing & dynamic seat capacity
-
-**Ownership.** Every event records the organizer who created it (`Event.organizerId`). Only that organizer can edit it
-(`GET/PUT /api/organizer/events/:id`); other organizers get `403`, customers get `403`/`401`. The check runs on the backend,
-inside the same transaction as the update. Dashboard stats are also scoped to the signed-in organizer's own events.
-Events that existed before this change are assigned to the earliest organizer account by the migration (and, for any
-orphaned events, again at server start).
-
-**Capacity drives the seat map.** There is no fixed seat count. When creating an event the organizer sets `totalSeats`
-(1–2000), and optionally `seatsPerRow`, `vipSeats` and `premiumSeats` (the rest are Standard). The API generates the seats
-(unique `section/row/number`, x/y coordinates) and a layout for the chosen venue style, and every event gets its own venue
-record, so capacities never affect one another. `Event.capacity` always equals the number of `EventSeat` rows; this is
-verified at the end of every edit transaction.
-
-**What an edit may change** (`PUT /api/organizer/events/:id`, all fields optional): title, description, date/time, venue name,
-location, image URL, per-tier prices and total seats.
-
-| Change | Rule |
-| --- | --- |
-| Capacity up | New seats are added to the rear tier (filling the last row first, then new rows). Existing seats are never moved or renumbered. |
-| Capacity down | Only open seats are removed, from the back. Sold seats and seats with a live hold are never removed; the API answers `409 CAPACITY_BELOW_BOOKED` with `minCapacity`. Deletion is guarded in SQL, so a seat grabbed a moment earlier aborts the whole edit. |
-| Prices | Applied to open seats only. Sold seats and seats currently held keep their price, so tickets and carts never change retroactively. The response reports how many seats kept the old price; saving again after holds expire applies it to the rest. |
-| Date, venue, location | If tickets are already sold the API returns `409 CONFIRMATION_REQUIRED` until the request carries `confirm: true`; ticket holders are then emailed. |
-| Concurrent edits | `expectedUpdatedAt` is checked; a stale form gets `409 STALE_EVENT`. Edits are serialized with a row lock on the event. |
-| Started / cancelled events | Cannot be edited (`409`). |
-
-Seat availability is still decided by the existing atomic hold/confirm queries (unique `EventSeat(eventId, seatId)` and
-`Ticket.eventSeatId`), so a seat can't be double-booked. After an edit the API clears the events cache and emits an
-`event:updated` socket message so open seat maps and listings reload.
-
-Run `pnpm --filter api check:layout` for the seat-layout sanity checks. Apply the new migration with
-`pnpm --filter api exec prisma migrate deploy` (or `pnpm db:migrate` in development).

@@ -49,22 +49,23 @@ export function CinemaShowSelector({
   selectedShowId,
   onSelectShow,
 }: CinemaShowSelectorProps) {
-  // Group shows by date
+  // Group shows by date and guarantee strict ascending chronological sort
   const { dateKeys, showsByDate } = useMemo(() => {
     const map = new Map<string, ShowWithStats[]>();
-    for (const show of shows) {
+    const sortedShows = [...shows].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+    for (const show of sortedShows) {
       const d = new Date(show.startsAt);
       const key = toDateKey(d);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(show);
     }
 
-    // Sort shows within each date chronologically
+    // Sort shows within each date chronologically (earliest morning to latest night)
     for (const [key, list] of map.entries()) {
       list.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
     }
 
-    const keys = Array.from(map.keys()).sort();
+    const keys = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
     return { dateKeys: keys, showsByDate: map };
   }, [shows]);
 
@@ -88,8 +89,18 @@ export function CinemaShowSelector({
     }
   }, [selectedShowId, shows]);
 
-  // Current shows for the selected date
-  const currentShows = showsByDate.get(selectedDate) || [];
+  // If selectedDate is not in dateKeys (e.g. after show deletions), fallback to earliest date
+  useEffect(() => {
+    if (dateKeys.length > 0 && !dateKeys.includes(selectedDate)) {
+      setSelectedDate(dateKeys[0]!);
+    }
+  }, [dateKeys, selectedDate]);
+
+  // Current shows for the selected date, strictly sorted chronologically by time
+  const currentShows = useMemo(() => {
+    const list = showsByDate.get(selectedDate) || [];
+    return [...list].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  }, [showsByDate, selectedDate]);
 
   if (shows.length === 0) return null;
 
