@@ -480,12 +480,12 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
               </label>
             )}
             <div className="flex flex-wrap justify-end gap-2">
-              <button type="button" className="btn btn-secondary" onClick={() => setReviewing(false)} disabled={save.isPending}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setReviewing(false)} disabled={save.isPending}>
                 Keep editing
               </button>
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn btn-primary btn-sm"
                 disabled={save.isPending || ((affectsCustomers || needsConfirm) && !acknowledged)}
                 onClick={() => {
                   setFormError(null);
@@ -498,10 +498,10 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
           </div>
         ) : (
           <div className="flex justify-end gap-2">
-            <Link href="/organizer" className="btn btn-secondary">
+            <Link href="/organizer" className="btn btn-secondary btn-sm">
               Cancel
             </Link>
-            <button type="submit" disabled={!data.editable || isFetching} className="btn btn-primary">
+            <button type="submit" disabled={!data.editable || isFetching} className="btn btn-primary btn-sm">
               Review changes
             </button>
           </div>

@@ -300,10 +300,10 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
       )}
 
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onDone} className="btn btn-secondary">
+        <button type="button" onClick={onDone} className="btn btn-secondary btn-sm">
           Cancel
         </button>
-        <button type="submit" disabled={create.isPending} className="btn btn-primary">
+        <button type="submit" disabled={create.isPending} className="btn btn-primary btn-sm">
           {create.isPending ? 'Publishing…' : 'Publish event'}
         </button>
       </div>
@@ -383,7 +383,7 @@ function StaffSection() {
               </button>
             </div>
           </div>
-          <button type="submit" disabled={create.isPending} className="btn btn-primary w-full">
+          <button type="submit" disabled={create.isPending} className="btn btn-primary btn-sm w-full">
             {create.isPending ? 'Creating…' : 'Create staff account'}
           </button>
         </form>
@@ -470,7 +470,7 @@ export default function OrganizerDashboardPage() {
           <p className="text-sm sm:text-[15px] text-ink-2">Sales and seat occupancy, refreshed every few seconds.</p>
         </div>
         {!creating && (
-          <button type="button" onClick={() => setCreating(true)} className="btn btn-primary self-start sm:self-auto">
+          <button type="button" onClick={() => setCreating(true)} className="btn btn-primary btn-sm self-start sm:self-auto">
             <Plus className="h-4 w-4" />
             New event
           </button>
