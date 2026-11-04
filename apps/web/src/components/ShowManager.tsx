@@ -434,18 +434,26 @@ export function ShowManager({
           role="dialog"
           aria-modal="true"
           aria-labelledby="delete-show-title"
-          className="fixed inset-0 z-50 flex animate-rise items-center justify-center bg-ink/60 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 p-4 backdrop-blur-sm"
         >
-          <div className="card w-full max-w-sm space-y-4 border-line p-5 shadow-lift">
-            <div className="flex items-start justify-between">
-              <h3 id="delete-show-title" className="font-display text-base font-semibold text-ink">
-                Delete this showtime?
-              </h3>
+          <div className="card w-full max-w-sm space-y-4 border-line p-5 shadow-lift animate-rise">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 id="delete-show-title" className="font-display text-base font-semibold text-ink">
+                    Delete this showtime?
+                  </h3>
+                  <p className="text-xs text-ink-3">This action cannot be undone</p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setDeletingShow(null)}
                 disabled={deleteShow.isPending}
-                className="btn btn-ghost !p-1.5"
+                className="rounded-lg p-1 text-ink-3 hover:bg-sunken hover:text-ink transition-colors"
                 aria-label="Close"
               >
                 <X className="h-4 w-4" />
@@ -453,7 +461,7 @@ export function ShowManager({
             </div>
             <p className="text-sm leading-relaxed text-ink-2">
               The show on <strong className="font-semibold text-ink">{formatEventDateTime(deletingShow.startsAt)}</strong> and its
-              seat map will be deleted. This can’t be undone.
+              seat map will be deleted.
             </p>
             <div className="flex justify-end gap-2 border-t border-line pt-3">
               <button type="button" onClick={() => setDeletingShow(null)} disabled={deleteShow.isPending} className="btn btn-secondary btn-sm">

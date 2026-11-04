@@ -47,9 +47,9 @@ export function DeleteEventModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-dialog-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/60 backdrop-blur-sm animate-rise"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/60 backdrop-blur-sm"
     >
-      <div className="card max-w-md w-full p-6 shadow-lift space-y-5">
+      <div className="card max-w-md w-full p-6 shadow-lift space-y-5 animate-rise">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">

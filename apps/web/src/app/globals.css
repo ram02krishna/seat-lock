@@ -71,6 +71,7 @@
 /* ------------------------------------------------------------------ */
 @layer base {
   html {
+    @apply bg-bg;
     -webkit-text-size-adjust: 100%;
     scroll-padding-top: 5rem;
     overflow-x: hidden;
@@ -127,7 +128,7 @@
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-transparent px-3.5 py-2 text-sm font-medium
       transition-colors duration-100 select-none whitespace-nowrap
       active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 touch-manipulation;
   }
