@@ -1,373 +1,426 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Calendar, Clock, Edit2, Plus, Trash2, X, AlertCircle } from 'lucide-react';
-import { apiFetch } from '@/lib/api';
+import { AlertCircle, Clock, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { apiFetch, ApiError } from '@/lib/api';
 import { formatINR, formatEventDateTime } from '@/lib/format';
+import {
+  localNowForInput,
+  latestShowPricing,
+  showFormFromPricing,
+  sortShows,
+  toLocalInput,
+  validateShowForm,
+  type ShowFormValues,
+  type ShowTimingItem,
+  type TierPricing,
+  type ValidatedShow,
+} from '@/lib/shows';
 
-export interface ShowTimingItem {
-  id: string;
-  startsAt: string;
-  pricing?: { VIP?: number; PREMIUM?: number; STANDARD?: number } | null;
-  totalSeats?: number;
-  soldSeats?: number;
-  heldSeats?: number;
-  availableSeats?: number;
-  soldOut?: boolean;
-  occupancyRate?: number;
-  revenueCents?: number;
-}
+export type { ShowTimingItem } from '@/lib/shows';
 
 export interface ShowManagerProps {
-  eventId: string;
-  eventTitle: string;
+  /**
+   * `live`  – the event exists: every add / edit / delete is saved to the API straight away.
+   * `draft` – the event is being created: shows live in the parent's state until it is published.
+   * Both modes render the same list, the same form and run the same validation.
+   */
+  mode?: 'live' | 'draft';
+  /** Required in live mode. */
+  eventId?: string;
   shows: ShowTimingItem[];
-  defaultPrices?: { VIP?: number; PREMIUM?: number; STANDARD?: number };
+  /** Draft mode: receives the new list after every add / edit / remove. */
+  onChange?: (shows: ShowTimingItem[]) => void;
+  /** Live mode: called after the server accepted a change (refetch the event). */
   onUpdated?: () => void;
+  /** Prices (paise) a new show starts from. Defaults to the most recently added show. */
+  defaultPrices?: TierPricing;
   title?: string;
-  optionalBadge?: boolean;
   subtitle?: string;
   buttonLabel?: string;
-  compactContainer?: boolean;
+  /** `section` is a standalone card; `inline` sits inside another form card. */
+  variant?: 'section' | 'inline';
+  disabled?: boolean;
 }
 
 export function ShowManager({
+  mode = 'live',
   eventId,
-  eventTitle,
   shows,
-  defaultPrices,
+  onChange,
   onUpdated,
+  defaultPrices,
   title,
-  optionalBadge,
   subtitle,
-  buttonLabel,
-  compactContainer = false,
+  buttonLabel = 'Add showtime',
+  variant = 'section',
+  disabled = false,
 }: ShowManagerProps) {
   const queryClient = useQueryClient();
+  const isLive = mode === 'live';
+  const draftCounter = useRef(0);
+
   const [isAdding, setIsAdding] = useState(false);
   const [editingShow, setEditingShow] = useState<ShowTimingItem | null>(null);
   const [deletingShow, setDeletingShow] = useState<ShowTimingItem | null>(null);
-
-  // Form state
-  const [startsAt, setStartsAt] = useState('');
-  const [vipPrice, setVipPrice] = useState(defaultPrices?.VIP ? String(defaultPrices.VIP / 100) : '1200');
-  const [premiumPrice, setPremiumPrice] = useState(defaultPrices?.PREMIUM ? String(defaultPrices.PREMIUM / 100) : '700');
-  const [standardPrice, setStandardPrice] = useState(defaultPrices?.STANDARD ? String(defaultPrices.STANDARD / 100) : '400');
+  const [values, setValues] = useState<ShowFormValues>(() => showFormFromPricing('', defaultPrices));
   const [formError, setFormError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [confirmMove, setConfirmMove] = useState(false);
 
-  function resetForm() {
-    setStartsAt('');
-    setVipPrice(defaultPrices?.VIP ? String(defaultPrices.VIP / 100) : '1200');
-    setPremiumPrice(defaultPrices?.PREMIUM ? String(defaultPrices.PREMIUM / 100) : '700');
-    setStandardPrice(defaultPrices?.STANDARD ? String(defaultPrices.STANDARD / 100) : '400');
-    setFormError(null);
+  const sorted = sortShows(shows);
+  const isFormOpen = isAdding || !!editingShow;
+
+  function priceBase(): TierPricing | undefined {
+    return defaultPrices ?? latestShowPricing(sorted);
+  }
+
+  function closeForm() {
     setIsAdding(false);
     setEditingShow(null);
+    setFormError(null);
+    setConfirmMove(false);
+  }
+
+  function openAdd() {
+    setValues(showFormFromPricing('', priceBase()));
+    setEditingShow(null);
+    setIsAdding(true);
+    setFormError(null);
+    setInfo(null);
+    setConfirmMove(false);
   }
 
   function openEdit(show: ShowTimingItem) {
-    const d = new Date(show.startsAt);
-    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-    setStartsAt(d.toISOString().slice(0, 16));
-    const pr = show.pricing || defaultPrices;
-    setVipPrice(pr?.VIP ? String(pr.VIP / 100) : '1200');
-    setPremiumPrice(pr?.PREMIUM ? String(pr.PREMIUM / 100) : '700');
-    setStandardPrice(pr?.STANDARD ? String(pr.STANDARD / 100) : '400');
-    setEditingShow(show);
+    setValues(showFormFromPricing(toLocalInput(show.startsAt), show.pricing, priceBase()));
     setIsAdding(false);
+    setEditingShow(show);
     setFormError(null);
+    setInfo(null);
+    setConfirmMove(false);
   }
 
-  const addShowMutation = useMutation({
-    mutationFn: async () => {
-      if (!startsAt) throw new Error('Please select a date and showtime');
-      const time = new Date(startsAt);
-      if (time.getTime() <= Date.now()) throw new Error('Showtime must be in the future');
+  function refreshAfterLiveChange() {
+    queryClient.invalidateQueries({ queryKey: ['organizer'] });
+    queryClient.invalidateQueries({ queryKey: ['events'] });
+    onUpdated?.();
+  }
 
-      const pricing = {
-        VIP: Math.round(Number(vipPrice) * 100) || 120000,
-        PREMIUM: Math.round(Number(premiumPrice) * 100) || 70000,
-        STANDARD: Math.round(Number(standardPrice) * 100) || 40000,
-      };
-
-      return apiFetch(`/api/organizer/events/${eventId}/shows`, {
-        method: 'POST',
-        body: JSON.stringify({
-          startsAt: time.toISOString(),
-          pricing,
-        }),
-      });
+  const saveShow = useMutation({
+    mutationFn: async (validated: ValidatedShow) => {
+      if (!isLive) {
+        const next: ShowTimingItem = {
+          id: editingShow?.id ?? `draft-${++draftCounter.current}`,
+          startsAt: validated.startsAt,
+          pricing: validated.pricing,
+        };
+        onChange?.(editingShow ? shows.map((s) => (s.id === editingShow.id ? next : s)) : [...shows, next]);
+        return { notifiedCustomers: 0 };
+      }
+      if (!eventId) throw new Error('Missing event.');
+      const moved = !!editingShow && new Date(editingShow.startsAt).getTime() !== new Date(validated.startsAt).getTime();
+      return apiFetch<{ notifiedCustomers?: number }>(
+        editingShow ? `/api/organizer/events/${eventId}/shows/${editingShow.id}` : `/api/organizer/events/${eventId}/shows`,
+        {
+          method: editingShow ? 'PUT' : 'POST',
+          body: JSON.stringify({
+            startsAt: validated.startsAt,
+            pricing: validated.pricing,
+            ...(moved && confirmMove ? { confirm: true } : {}),
+          }),
+        },
+      );
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['organizer'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      resetForm();
-      onUpdated?.();
+    onSuccess: (res) => {
+      const wasEditing = !!editingShow;
+      closeForm();
+      if (isLive) {
+        setInfo(
+          res.notifiedCustomers
+            ? `Showtime updated. ${res.notifiedCustomers} ticket holder(s) were emailed about the change.`
+            : wasEditing
+              ? 'Showtime updated.'
+              : 'Showtime added.',
+        );
+        refreshAfterLiveChange();
+      }
     },
-    onError: (err: any) => {
-      setFormError(err.message || 'Could not add showtiming');
+    onError: (err: unknown) => {
+      const e = err as ApiError;
+      if (e?.data?.code === 'CONFIRMATION_REQUIRED') setConfirmMove(false);
+      setFormError(e?.message || 'Could not save the showtime.');
     },
   });
 
-  const editShowMutation = useMutation({
-    mutationFn: async () => {
-      if (!editingShow) return;
-      if (!startsAt) throw new Error('Please select a date and showtime');
-      const time = new Date(startsAt);
-      if (time.getTime() <= Date.now()) throw new Error('Showtime must be in the future');
-
-      const pricing = {
-        VIP: Math.round(Number(vipPrice) * 100) || 120000,
-        PREMIUM: Math.round(Number(premiumPrice) * 100) || 70000,
-        STANDARD: Math.round(Number(standardPrice) * 100) || 40000,
-      };
-
-      return apiFetch(`/api/organizer/events/${eventId}/shows/${editingShow.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          startsAt: time.toISOString(),
-          pricing,
-        }),
-      });
+  const deleteShow = useMutation({
+    mutationFn: async (show: ShowTimingItem) => {
+      if (!isLive) {
+        onChange?.(shows.filter((s) => s.id !== show.id));
+        return;
+      }
+      await apiFetch(`/api/organizer/events/${eventId}/shows/${show.id}`, { method: 'DELETE' });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['organizer'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      resetForm();
-      onUpdated?.();
-    },
-    onError: (err: any) => {
-      setFormError(err.message || 'Could not update showtiming');
-    },
-  });
-
-  const deleteShowMutation = useMutation({
-    mutationFn: async (showId: string) => {
-      return apiFetch(`/api/organizer/events/${eventId}/shows/${showId}`, {
-        method: 'DELETE',
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['organizer'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
       setDeletingShow(null);
-      onUpdated?.();
+      if (isLive) {
+        setInfo('Showtime deleted.');
+        refreshAfterLiveChange();
+      }
     },
-    onError: (err: any) => {
-      alert(err.message || 'Could not remove showtiming');
+    onError: (err: unknown) => {
+      setDeletingShow(null);
+      setFormError((err as ApiError)?.message || 'Could not delete the showtime.');
     },
   });
+
+  function submitForm() {
+    setFormError(null);
+    try {
+      const others = sorted.filter((s) => s.id !== editingShow?.id);
+      saveShow.mutate(validateShowForm(values, others));
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Check the showtime and try again.');
+    }
+  }
+
+  const set = (key: keyof ShowFormValues) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setValues((v) => ({ ...v, [key]: e.target.value }));
+
+  const priceField = (key: 'vip' | 'premium' | 'standard', label: string) => (
+    <div>
+      <label className="field-label" htmlFor={`show-${key}`}>
+        {label}
+      </label>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-ink-3">₹</span>
+        <input
+          id={`show-${key}`}
+          type="number"
+          min={1}
+          step="any"
+          inputMode="decimal"
+          value={values[key]}
+          onChange={set(key)}
+          className="field pl-7 tabular-nums"
+        />
+      </div>
+    </div>
+  );
+
+  const movingSoldShow =
+    isLive &&
+    !!editingShow &&
+    (editingShow.soldSeats ?? 0) > 0 &&
+    !!values.startsAt &&
+    new Date(values.startsAt).getTime() !== new Date(editingShow.startsAt).getTime();
+
+  const saving = saveShow.isPending;
 
   return (
     <section
-      className={
-        compactContainer
-          ? 'space-y-4 rounded-lg border border-line bg-sunken/40 p-4'
-          : 'space-y-4 rounded-xl border border-line bg-surface p-5 sm:p-6'
-      }
-      aria-labelledby="shows-heading"
+      className={variant === 'inline' ? 'space-y-4 rounded-lg border border-line bg-sunken/40 p-4' : 'card space-y-4 p-5 sm:p-6'}
+      aria-labelledby={`shows-heading-${mode}`}
     >
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-0.5">
           <h2
-            id="shows-heading"
+            id={`shows-heading-${mode}`}
             className={
-              compactContainer
-                ? 'text-sm font-semibold text-ink flex items-center gap-1.5'
-                : 'text-base sm:text-lg font-bold font-display text-ink flex items-center gap-2'
+              variant === 'inline'
+                ? 'flex items-center gap-2 text-sm font-semibold text-ink'
+                : 'flex items-center gap-2 font-display text-xl font-semibold text-ink'
             }
           >
-            <Clock className={compactContainer ? 'h-4 w-4 text-accent' : 'h-5 w-5 text-accent'} />
-            <span>{title || `Show Timings (${shows.length})`}</span>
-            {optionalBadge && <span className="font-normal text-ink-3 text-xs sm:text-sm">(optional)</span>}
+            <Clock className={variant === 'inline' ? 'h-4 w-4 text-accent' : 'h-5 w-5 text-accent'} />
+            <span>{title ?? `Show timings (${shows.length})`}</span>
           </h2>
-          <p className="text-xs sm:text-[13px] text-ink-3">
-            {subtitle || 'Manage multiple showtimes for this cinema event. Each show maintains separate seat bookings.'}
+          <p className="text-xs text-ink-3 sm:text-[13px]">
+            {subtitle ?? 'Each showtime has its own seat bookings and ticket prices.'}
           </p>
         </div>
-        {!isAdding && !editingShow && (
+        {!isFormOpen && (
           <button
             type="button"
-            onClick={() => {
-              resetForm();
-              setIsAdding(true);
-            }}
-            className="btn btn-secondary btn-xs inline-flex items-center gap-1.5 self-start sm:self-auto"
+            onClick={openAdd}
+            disabled={disabled}
+            className="btn btn-secondary btn-xs self-start sm:self-auto"
           >
             <Plus className="h-3.5 w-3.5" />
-            {buttonLabel || 'Add Showtime'}
+            {buttonLabel}
           </button>
         )}
       </div>
 
-      {/* Inline Form for Adding or Editing Show */}
-      {(isAdding || editingShow) && (
-        <div className="rounded-lg border border-accent/30 bg-accent/5 p-4 space-y-4 animate-fade-in">
+      {info && !isFormOpen && (
+        <p role="status" className="notice notice-ok">
+          {info}
+        </p>
+      )}
+
+      {isFormOpen && (
+        <div
+          className="space-y-4 rounded-lg border border-accent/30 bg-accent-soft/40 p-4"
+          // Enter saves the showtime instead of submitting the page form this component may sit in
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+              e.preventDefault();
+              if (!saving) submitForm();
+            }
+          }}
+        >
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-ink">
-              {editingShow ? 'Edit Show Timing' : 'Add New Show Timing'}
-            </h3>
-            <button
-              type="button"
-              onClick={resetForm}
-              className="text-ink-3 hover:text-ink p-1 rounded"
-            >
+            <h3 className="text-sm font-semibold text-ink">{editingShow ? 'Edit showtime' : 'New showtime'}</h3>
+            <button type="button" onClick={closeForm} className="btn btn-ghost !p-1.5" aria-label="Close showtime form">
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
             <div>
-              <label className="block text-xs font-medium text-ink-2 mb-1">
-                Show Date &amp; Time *
+              <label className="field-label" htmlFor="show-startsAt">
+                Date &amp; time
               </label>
               <input
+                id="show-startsAt"
                 type="datetime-local"
-                value={startsAt}
-                onChange={(e) => setStartsAt(e.target.value)}
-                className="field !py-1.5 text-sm w-full"
-                required
+                min={localNowForInput()}
+                value={values.startsAt}
+                onChange={set('startsAt')}
+                className="field"
               />
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="block text-xs font-medium text-ink-2 mb-1">VIP (₹)</label>
-                <input
-                  type="number"
-                  value={vipPrice}
-                  onChange={(e) => setVipPrice(e.target.value)}
-                  className="field !py-1.5 text-sm w-full"
-                  min="1"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-ink-2 mb-1">Premium (₹)</label>
-                <input
-                  type="number"
-                  value={premiumPrice}
-                  onChange={(e) => setPremiumPrice(e.target.value)}
-                  className="field !py-1.5 text-sm w-full"
-                  min="1"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-ink-2 mb-1">Standard (₹)</label>
-                <input
-                  type="number"
-                  value={standardPrice}
-                  onChange={(e) => setStandardPrice(e.target.value)}
-                  className="field !py-1.5 text-sm w-full"
-                  min="1"
-                />
-              </div>
+            <div className="grid grid-cols-3 gap-3">
+              {priceField('vip', 'VIP')}
+              {priceField('premium', 'Premium')}
+              {priceField('standard', 'Standard')}
             </div>
           </div>
 
+          {movingSoldShow && (
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={confirmMove}
+                onChange={(e) => setConfirmMove(e.target.checked)}
+              />
+              <span>
+                {editingShow!.soldSeats} ticket{editingShow!.soldSeats === 1 ? ' has' : 's have'} already been sold for this
+                show. They stay valid, and ticket holders will be emailed about the new time.
+              </span>
+            </label>
+          )}
+
           {formError && (
-            <div className="text-xs text-bad bg-bad/10 border border-bad/30 rounded p-2 flex items-center gap-1.5">
-              <AlertCircle className="h-4 w-4 shrink-0" />
+            <p role="alert" className="notice notice-error">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{formError}</span>
-            </div>
+            </p>
           )}
 
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={resetForm}
-              className="btn btn-secondary btn-xs"
-            >
+            <button type="button" onClick={closeForm} disabled={saving} className="btn btn-secondary btn-sm">
               Cancel
             </button>
             <button
               type="button"
-              onClick={() => {
-                if (editingShow) editShowMutation.mutate();
-                else addShowMutation.mutate();
-              }}
-              disabled={addShowMutation.isPending || editShowMutation.isPending}
-              className="btn btn-primary btn-xs"
+              onClick={submitForm}
+              disabled={saving || (movingSoldShow && !confirmMove)}
+              className="btn btn-primary btn-sm"
             >
-              {addShowMutation.isPending || editShowMutation.isPending
-                ? 'Saving...'
-                : editingShow
-                  ? 'Update Show'
-                  : 'Save Show'}
+              {saving ? 'Saving…' : editingShow ? 'Update showtime' : 'Add showtime'}
             </button>
           </div>
         </div>
       )}
 
-      {/* Shows List */}
-      {shows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-line p-6 text-center text-xs text-ink-3">
-          No show timings configured yet. Click “Add Show Timing” to add your first movie showtime.
+      {!isFormOpen && formError && (
+        <p role="alert" className="notice notice-error">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{formError}</span>
+        </p>
+      )}
+
+      {sorted.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-line-strong p-6 text-center text-sm text-ink-3">
+          No showtimes yet. Use “{buttonLabel}” to add the first one.
         </div>
       ) : (
-        <div className="divide-y divide-line rounded-lg border border-line bg-surface overflow-hidden">
-          {shows.map((show) => {
-            const date = new Date(show.startsAt);
-            const isPast = date.getTime() <= Date.now();
+        <div className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+          {sorted.map((show) => {
+            const isPast = new Date(show.startsAt).getTime() <= Date.now();
+            const hasSales = (show.soldSeats ?? 0) > 0;
+            const isLastLive = isLive && sorted.length <= 1;
+            const deleteBlockedReason = hasSales
+              ? 'Tickets have been sold for this show'
+              : isLastLive
+                ? 'An event needs at least one showtime'
+                : undefined;
             return (
               <div
                 key={show.id}
-                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 hover:bg-sunken/40 transition-colors"
+                className="flex flex-col gap-3 p-3.5 transition-colors hover:bg-sunken/40 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm text-ink">
-                      {formatEventDateTime(show.startsAt)}
-                    </span>
-                    {isPast ? (
-                      <span className="tag text-[10px] bg-sunken text-ink-3">Ended</span>
-                    ) : show.soldOut ? (
-                      <span className="tag text-[10px] bg-bad/15 text-bad">Sold Out</span>
-                    ) : (
-                      <span className="tag text-[10px] bg-ok/15 text-ok">Active</span>
-                    )}
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-ink">{formatEventDateTime(show.startsAt)}</span>
+                    {isLive &&
+                      (isPast ? (
+                        <span className="tag">Ended</span>
+                      ) : show.soldOut ? (
+                        <span className="tag bg-danger-soft text-danger">Sold out</span>
+                      ) : (
+                        <span className="tag bg-ok-soft text-ok">On sale</span>
+                      ))}
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-ink-3 flex-wrap">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-ink-3">
                     {show.totalSeats !== undefined && (
-                      <span>
-                        Seats: <strong className="text-ink">{show.availableSeats ?? show.totalSeats} open</strong> / {show.totalSeats} total
+                      <span className="tabular-nums">
+                        <strong className="font-semibold text-ink">{show.availableSeats ?? show.totalSeats}</strong> open of{' '}
+                        {show.totalSeats}
                       </span>
                     )}
-                    {show.soldSeats !== undefined && show.soldSeats > 0 && (
-                      <span>
-                        Sold: <strong className="text-ink">{show.soldSeats}</strong>
+                    {hasSales && (
+                      <span className="tabular-nums">
+                        Sold <strong className="font-semibold text-ink">{show.soldSeats}</strong>
                       </span>
                     )}
-                    {show.revenueCents !== undefined && show.revenueCents > 0 && (
-                      <span>
-                        Revenue: <strong className="text-ok font-medium">{formatINR(show.revenueCents)}</strong>
+                    {!!show.revenueCents && show.revenueCents > 0 && (
+                      <span className="tabular-nums">
+                        Revenue <strong className="font-semibold text-ink">{formatINR(show.revenueCents)}</strong>
                       </span>
                     )}
                     {show.pricing && (
                       <span className="tabular-nums">
-                        Standard: {formatINR(show.pricing.STANDARD || 40000)} · Premium: {formatINR(show.pricing.PREMIUM || 70000)} · VIP: {formatINR(show.pricing.VIP || 120000)}
+                        Standard {show.pricing.STANDARD != null ? formatINR(show.pricing.STANDARD) : '–'} · Premium{' '}
+                        {show.pricing.PREMIUM != null ? formatINR(show.pricing.PREMIUM) : '–'} · VIP{' '}
+                        {show.pricing.VIP != null ? formatINR(show.pricing.VIP) : '–'}
                       </span>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+                <div className="flex shrink-0 items-center gap-1.5 self-end sm:self-auto">
                   <button
                     type="button"
                     onClick={() => openEdit(show)}
-                    className="btn btn-secondary btn-xs inline-flex items-center gap-1"
-                    title="Edit show timing"
+                    disabled={disabled || (isLive && isPast)}
+                    className="btn btn-secondary btn-xs"
+                    title={isLive && isPast ? 'This show has already started' : 'Edit showtime'}
                   >
-                    <Edit2 className="h-3 w-3" />
+                    <Pencil className="h-3 w-3" />
                     Edit
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDeletingShow(show)}
-                    className="btn btn-secondary text-bad hover:bg-bad/10 hover:border-bad/40 btn-xs inline-flex items-center gap-1"
-                    title="Delete show timing"
+                    onClick={() => (isLive ? setDeletingShow(show) : deleteShow.mutate(show))}
+                    disabled={disabled || !!deleteBlockedReason}
+                    className="btn btn-secondary btn-xs text-danger"
+                    title={deleteBlockedReason ?? 'Delete showtime'}
                   >
                     <Trash2 className="h-3 w-3" />
-                    Delete
+                    {isLive ? 'Delete' : 'Remove'}
                   </button>
                 </div>
               </div>
@@ -376,40 +429,44 @@ export function ShowManager({
         </div>
       )}
 
-      {/* Delete Show Confirmation Modal */}
       {deletingShow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/60 backdrop-blur-sm animate-fade-in">
-          <div className="card max-w-sm w-full p-5 shadow-xl space-y-4 border-line-strong bg-surface">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-show-title"
+          className="fixed inset-0 z-50 flex animate-rise items-center justify-center bg-ink/60 p-4 backdrop-blur-sm"
+        >
+          <div className="card w-full max-w-sm space-y-4 border-line p-5 shadow-lift">
             <div className="flex items-start justify-between">
-              <h3 className="font-bold text-base text-ink">Delete Show Timing?</h3>
+              <h3 id="delete-show-title" className="font-display text-base font-semibold text-ink">
+                Delete this showtime?
+              </h3>
               <button
                 type="button"
                 onClick={() => setDeletingShow(null)}
-                className="text-ink-3 hover:text-ink p-1"
+                disabled={deleteShow.isPending}
+                className="btn btn-ghost !p-1.5"
+                aria-label="Close"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="text-xs text-ink-2 leading-relaxed">
-              Are you sure you want to delete the show scheduled for{' '}
-              <strong className="text-ink font-semibold">{formatEventDateTime(deletingShow.startsAt)}</strong>? This will remove its seats and availability.
+            <p className="text-sm leading-relaxed text-ink-2">
+              The show on <strong className="font-semibold text-ink">{formatEventDateTime(deletingShow.startsAt)}</strong> and its
+              seat map will be removed. This can’t be undone.
             </p>
-            <div className="flex justify-end gap-2 pt-2 border-t border-line">
-              <button
-                type="button"
-                onClick={() => setDeletingShow(null)}
-                className="btn btn-secondary btn-xs"
-              >
+            <div className="flex justify-end gap-2 border-t border-line pt-3">
+              <button type="button" onClick={() => setDeletingShow(null)} disabled={deleteShow.isPending} className="btn btn-secondary btn-sm">
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => deleteShowMutation.mutate(deletingShow.id)}
-                disabled={deleteShowMutation.isPending}
-                className="btn bg-bad hover:bg-bad/90 text-white font-semibold btn-xs inline-flex items-center gap-1"
+                onClick={() => deleteShow.mutate(deletingShow)}
+                disabled={deleteShow.isPending}
+                className="btn btn-danger btn-sm"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                {deleteShowMutation.isPending ? 'Deleting...' : 'Delete Show'}
+                {deleteShow.isPending ? 'Deleting…' : 'Delete showtime'}
               </button>
             </div>
           </div>
