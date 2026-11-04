@@ -65,7 +65,7 @@ function EventRow({ event, onPrefetch }: { event: EventItem; onPrefetch: (id: st
             <div className="flex items-center gap-2 flex-wrap">
               <VenueBadge type={event.venue?.layout?.type} />
               {event.shows && event.shows.length > 1 && (
-                <span className="tag text-[10px] bg-accent/10 text-accent font-semibold">
+                <span className="tag text-[10px] bg-accent-soft text-accent font-semibold">
                   {event.shows.length} shows
                 </span>
               )}
