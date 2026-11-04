@@ -329,6 +329,7 @@ organizerRouter.get('/stats', async (_req: Request, res: Response, next: NextFun
         startsAt: ev.startsAt,
         venueName: ev.venue.name,
         venueType: (ev.venue.layout as any)?.type || 'THEATER_DOLBY',
+        location: ev.location,
         totalSeats: total,
         soldSeats: sold,
         heldSeats: held,

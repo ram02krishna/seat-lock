@@ -27,6 +27,7 @@ interface EventStatsResponse {
     id: string;
     title: string;
     description?: string;
+    location?: string | null;
     startsAt: string;
     venueName: string;
     venueType?: string;
@@ -114,7 +115,7 @@ export default function EventAnalyticsPage({ params }: { params: Promise<{ id: s
             {event.venueType && <VenueBadge type={event.venueType} />}
             <h1 className="font-display text-xl sm:text-3xl md:text-4xl font-bold tracking-tight">{event.title}</h1>
             <p className="text-xs sm:text-sm text-ink-2">
-              {event.venueName} · {formatEventDateTime(event.startsAt)}
+              {event.venueName}{event.location ? ` · ${event.location}` : ''} · {formatEventDateTime(event.startsAt)}
             </p>
           </div>
           <div className="flex gap-2 shrink-0 flex-wrap">

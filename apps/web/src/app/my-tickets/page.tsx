@@ -21,7 +21,7 @@ interface OrderItem {
   id: string;
   totalCents: number;
   createdAt: string;
-  event: { id: string; title: string; startsAt: string; venue: { name: string } };
+  event: { id: string; title: string; startsAt: string; location?: string | null; venue: { name: string } };
   show?: { id: string; startsAt: string } | null;
   tickets: TicketItem[];
 }
@@ -124,7 +124,7 @@ function OrderBlock({
             </span>
             <span className="inline-flex items-center gap-1.5">
               <MapPin className="h-3.5 w-3.5 text-ink-3 shrink-0" />
-              {order.event.venue.name}
+              {order.event.venue.name}{order.event.location ? ` · ${order.event.location}` : ''}
             </span>
           </p>
         </div>

@@ -26,6 +26,7 @@ interface EventStat {
   startsAt: string;
   venueName: string;
   venueType?: string;
+  location?: string | null;
   totalSeats: number;
   soldSeats: number;
   heldSeats: number;
@@ -460,7 +461,13 @@ export default function OrganizerDashboardPage() {
 
   const summary = data?.summary;
   const q = search.trim().toLowerCase();
-  const events = (data?.events ?? []).filter((e) => !q || e.title.toLowerCase().includes(q) || e.venueName.toLowerCase().includes(q));
+  const events = (data?.events ?? []).filter(
+    (e) =>
+      !q ||
+      e.title.toLowerCase().includes(q) ||
+      e.venueName.toLowerCase().includes(q) ||
+      (e.location && e.location.toLowerCase().includes(q))
+  );
 
   return (
     <main className="page max-w-6xl space-y-8 sm:space-y-10 py-6 sm:py-12 pb-safe">
@@ -517,7 +524,7 @@ export default function OrganizerDashboardPage() {
                     {ev.title}
                   </Link>
                   <p className="text-xs sm:text-[13px] text-ink-3 line-clamp-1">
-                    {ev.venueName} · {formatEventDateTime(ev.startsAt)}
+                    {ev.venueName}{ev.location ? ` · ${ev.location}` : ''} · {formatEventDateTime(ev.startsAt)}
                   </p>
                 </div>
 

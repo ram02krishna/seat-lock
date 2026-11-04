@@ -8,6 +8,7 @@ export interface SendTicketsEmailParams {
   eventTitle: string;
   startsAt: Date;
   venueName: string;
+  location?: string | null;
   tickets: Array<{
     ticketId: string;
     qrToken?: string;
@@ -33,7 +34,7 @@ function escapeHtml(value: unknown): string {
 }
 
 export async function sendTicketConfirmationEmail(params: SendTicketsEmailParams) {
-  const { toEmail, orderId, eventTitle, startsAt, venueName, tickets } = params;
+  const { toEmail, orderId, eventTitle, startsAt, venueName, location, tickets } = params;
 
   const viewTicketsUrl =
     config.CLIENT_TICKETS_URL ||
@@ -48,8 +49,10 @@ export async function sendTicketConfirmationEmail(params: SendTicketsEmailParams
     month: 'long',
     day: 'numeric',
     year: 'numeric',
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
   });
 
   const tierConfig: Record<string, { bg: string; text: string; border: string }> = {
@@ -172,6 +175,11 @@ export async function sendTicketConfirmationEmail(params: SendTicketsEmailParams
               <div style="font-size: 13px; color: #3e495c; margin-bottom: 6px; line-height: 1.5;">
                 📍 <strong style="color: #101622;">Venue:</strong> ${escapeHtml(venueName)}
               </div>
+              ${location ? `
+              <div style="font-size: 13px; color: #3e495c; margin-bottom: 6px; line-height: 1.5;">
+                🗺️ <strong style="color: #101622;">Location:</strong> ${escapeHtml(location)}
+              </div>
+              ` : ''}
               <div style="font-size: 13px; color: #3e495c; line-height: 1.5;">
                 📅 <strong style="color: #101622;">Date:</strong> ${escapeHtml(formattedDate)}
               </div>
@@ -404,13 +412,15 @@ export async function sendEventUpdatedEmail(params: SendEventUpdatedEmailParams)
   const { toEmail, eventTitle, startsAt, venueName, location, changes } = params;
   const viewTicketsUrl =
     config.CLIENT_TICKETS_URL || 'https://seatlock-event-seat-booking.vercel.app/my-tickets';
-  const formattedDate = new Date(startsAt).toLocaleString('en-IN', {
+  const formattedDate = new Date(startsAt).toLocaleDateString('en-US', {
     weekday: 'long',
-    day: 'numeric',
     month: 'long',
+    day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kolkata',
   });
 
   const html = `
