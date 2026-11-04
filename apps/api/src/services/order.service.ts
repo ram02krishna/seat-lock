@@ -17,6 +17,7 @@ export async function finalizeOrder(orderId: string, seatIds?: string[]) {
       where: { id: orderId },
       include: {
         event: { include: { venue: true } },
+        show: true,
         user: true,
         tickets: {
           include: {
@@ -34,6 +35,7 @@ export async function finalizeOrder(orderId: string, seatIds?: string[]) {
     if (order.status === 'CONFIRMED') {
       return {
         order,
+        show: order.show,
         tickets: order.tickets,
         user: order.user,
         event: order.event,
@@ -123,6 +125,7 @@ export async function finalizeOrder(orderId: string, seatIds?: string[]) {
 
     return {
       order: updatedOrder,
+      show: order.show,
       tickets: createdTickets,
       user: order.user,
       event: order.event,
@@ -152,15 +155,18 @@ export async function finalizeOrder(orderId: string, seatIds?: string[]) {
   if (!finalized.alreadyConfirmed) {
     broadcastSeatsSold(finalized.order.eventId, {
       seatIds: finalized.tickets.map((t) => t.eventSeat.seatId),
+      showId: finalized.order.showId || undefined,
     });
 
     redisConnection.del('cache:events:published').catch(() => null);
+
+    const emailStartsAt = finalized.show?.startsAt ?? finalized.event.startsAt;
 
     sendTicketConfirmationEmail({
       toEmail: finalized.user.email,
       orderId: finalized.order.id,
       eventTitle: finalized.event.title,
-      startsAt: finalized.event.startsAt,
+      startsAt: emailStartsAt,
       venueName: finalized.event.venue.name,
       tickets: ticketsWithQRs.map((t) => ({
         ticketId: t.id,
@@ -183,9 +189,10 @@ export async function createAndConfirmBooking(params: {
   eventId: string;
   seatIds: string[];
   userId: string;
+  showId?: string;
   idempotencyKey?: string;
 }) {
-  const { eventId, seatIds, userId, idempotencyKey } = params;
+  const { eventId, seatIds, userId, showId, idempotencyKey } = params;
   const uniqueSeatIds = [...new Set(seatIds)];
 
   if (uniqueSeatIds.length === 0) {
@@ -216,7 +223,17 @@ export async function createAndConfirmBooking(params: {
   if (!event || event.status !== 'PUBLISHED') {
     throw new AppError(404, 'Event not found or not open for booking');
   }
-  if (event.startsAt.getTime() <= Date.now()) {
+
+  // If show is specified, verify show exists and is in future
+  if (showId) {
+    const show = await prisma.show.findUnique({ where: { id: showId } });
+    if (!show || show.eventId !== eventId) {
+      throw new AppError(404, 'Show not found');
+    }
+    if (show.startsAt.getTime() <= Date.now()) {
+      throw new AppError(400, 'This show has already started');
+    }
+  } else if (event.startsAt.getTime() <= Date.now()) {
     throw new AppError(400, 'This event has already started');
   }
 
@@ -224,6 +241,7 @@ export async function createAndConfirmBooking(params: {
   const heldSeats = await prisma.eventSeat.findMany({
     where: {
       eventId,
+      ...(showId ? { showId } : {}),
       heldByUserId: userId,
       status: 'HELD',
       holdExpiresAt: { gt: new Date() },
@@ -245,6 +263,7 @@ export async function createAndConfirmBooking(params: {
     data: {
       userId,
       eventId,
+      showId: showId || null,
       status: 'PENDING',
       totalCents,
       idempotencyKey: idempotencyKey || null,

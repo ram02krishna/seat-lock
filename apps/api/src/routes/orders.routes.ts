@@ -16,13 +16,14 @@ ordersRouter.post(
   validateBody(ConfirmOrderSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { eventId, seatIds, idempotencyKey } = req.body;
+      const { eventId, seatIds, showId, idempotencyKey } = req.body;
       const userId = req.user!.userId;
 
       const result = await createAndConfirmBooking({
         eventId,
         seatIds,
         userId,
+        showId,
         idempotencyKey,
       });
 
@@ -68,6 +69,7 @@ ordersRouter.get('/my-tickets', requireAuth, async (req: Request, res: Response,
         event: {
           include: { venue: true },
         },
+        show: true,
         tickets: {
           include: {
             eventSeat: {
@@ -100,6 +102,7 @@ ordersRouter.get('/my-tickets', requireAuth, async (req: Request, res: Response,
           totalCents: order.totalCents,
           createdAt: order.createdAt,
           event: order.event,
+          show: order.show ? { id: order.show.id, startsAt: order.show.startsAt } : null,
           tickets: ticketsWithQRs,
         };
       })

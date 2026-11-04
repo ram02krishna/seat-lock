@@ -1,13 +1,15 @@
 'use client';
 
-import { use, useEffect } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Calendar, MapPin, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, MapPin, RefreshCw } from 'lucide-react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { formatEventDateTime } from '@/lib/format';
 import { SeatMap, SeatData } from '@/components/seat-map/SeatMap';
 import { CartPanel } from '@/components/seat-map/CartPanel';
+import { CinemaShowSelector, ShowWithStats } from '@/components/CinemaShowSelector';
 import { useCartStore } from '@/store/cartStore';
 import { useEventSocket } from '@/hooks/useEventSocket';
 import { VenueBadge } from '@/components/venue-badge';
@@ -18,26 +20,60 @@ interface EventPageProps {
 
 interface SeatsResponse {
   eventId: string;
-  event?: { id: string; title: string; description?: string; location?: string | null; imageUrl?: string | null; startsAt: string; capacity?: number };
+  showId?: string | null;
+  show?: { id: string; startsAt: string; pricing?: any } | null;
+  shows?: ShowWithStats[];
+  event?: {
+    id: string;
+    title: string;
+    description?: string;
+    location?: string | null;
+    imageUrl?: string | null;
+    startsAt: string;
+    capacity?: number;
+    category?: string | null;
+  };
   venue: { id: string; name: string; layout: any };
   seats: SeatData[];
 }
 
 export default function EventSeatMapPage({ params }: EventPageProps) {
   const { id: eventId } = use(params);
-  useEventSocket(eventId);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialShowId = searchParams.get('showId');
 
-  const { eventId: cartEventId, heldSeatIds, restoreHold, clearHold, setEventId } = useCartStore();
+  const [activeShowId, setActiveShowId] = useState<string | null>(initialShowId);
+
+  useEventSocket(eventId, activeShowId);
+
+  const {
+    eventId: cartEventId,
+    showId: cartShowId,
+    heldSeatIds,
+    restoreHold,
+    clearHold,
+    setEventId,
+    setShowId,
+  } = useCartStore();
 
   useEffect(() => {
     setEventId(eventId);
   }, [eventId, setEventId]);
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<SeatsResponse>({
-    queryKey: ['events', eventId, 'seats'],
-    queryFn: () => apiFetch(`/api/events/${eventId}/seats`),
+    queryKey: ['events', eventId, 'seats', activeShowId || 'default'],
+    queryFn: () => apiFetch(`/api/events/${eventId}/seats${activeShowId ? `?showId=${activeShowId}` : ''}`),
     staleTime: 10000,
   });
+
+  // Sync activeShowId from response if server assigned default show
+  useEffect(() => {
+    if (data?.showId && !activeShowId) {
+      setActiveShowId(data.showId);
+      setShowId(data.showId, data.show?.startsAt || null);
+    }
+  }, [data?.showId, data?.show?.startsAt, activeShowId, setShowId]);
 
   // Mirror the server's view of *our* holds into the cart (covers reloads and other tabs)
   useEffect(() => {
@@ -62,13 +98,15 @@ export default function EventSeatMapPage({ params }: EventPageProps) {
           price: s.price,
         })),
         earliest,
+        activeShowId || data.showId || undefined,
+        data.show?.startsAt,
       );
-    } else if (cartEventId === eventId && heldSeatIds.length > 0) {
+    } else if (cartEventId === eventId && heldSeatIds.length > 0 && (!cartShowId || cartShowId === activeShowId)) {
       // We think we hold seats but the server disagrees (expired, or released elsewhere)
       clearHold();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.seats, isFetching, eventId]);
+  }, [data?.seats, isFetching, eventId, activeShowId]);
 
   if (isLoading) {
     return (
@@ -107,9 +145,11 @@ export default function EventSeatMapPage({ params }: EventPageProps) {
     );
   }
 
-  const { venue, seats, event } = data;
+  const { venue, seats, event, show, shows } = data;
   const availableCount = seats.filter((s) => s.status === 'AVAILABLE').length;
-  const started = event?.startsAt ? new Date(event.startsAt).getTime() < Date.now() : false;
+  const currentStartsAt = show?.startsAt || event?.startsAt;
+  const started = currentStartsAt ? new Date(currentStartsAt).getTime() < Date.now() : false;
+  const hasMultipleShows = shows && shows.length > 0;
 
   return (
     <main className="page max-w-7xl space-y-5 sm:space-y-6 py-5 pb-cart-mobile sm:py-8 lg:pb-8">
@@ -137,10 +177,10 @@ export default function EventSeatMapPage({ params }: EventPageProps) {
                 <span className="font-medium">{venue.name}</span>
                 {event?.location && <span className="text-ink-3">· {event.location}</span>}
               </span>
-              {event?.startsAt && (
-                <span className="inline-flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-ink-3 shrink-0" />
-                  {formatEventDateTime(event.startsAt)}
+              {currentStartsAt && (
+                <span className="inline-flex items-center gap-1.5 font-medium text-ink">
+                  <Calendar className="h-3.5 w-3.5 text-accent shrink-0" />
+                  {hasMultipleShows ? `Showtime: ${formatEventDateTime(currentStartsAt)}` : formatEventDateTime(currentStartsAt)}
                 </span>
               )}
               <span className="tabular-nums">
@@ -163,6 +203,19 @@ export default function EventSeatMapPage({ params }: EventPageProps) {
         </div>
       </header>
 
+      {/* BookMyShow Cinema Show Selector */}
+      {hasMultipleShows && (
+        <CinemaShowSelector
+          shows={shows}
+          selectedShowId={activeShowId || data.showId || null}
+          onSelectShow={(selected) => {
+            setActiveShowId(selected.id);
+            setShowId(selected.id, selected.startsAt);
+            router.replace(`/events/${eventId}?showId=${selected.id}`, { scroll: false });
+          }}
+        />
+      )}
+
       {event?.imageUrl && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={event.imageUrl} alt="" className="max-h-56 w-full rounded-xl border border-line object-cover" />
@@ -171,14 +224,20 @@ export default function EventSeatMapPage({ params }: EventPageProps) {
       {event?.description && <p className="max-w-3xl text-sm text-ink-2">{event.description}</p>}
 
       {started && (
-        <p className="notice notice-warn">This event has already started, so seats can no longer be booked.</p>
+        <p className="notice notice-warn">This show has already started, so seats can no longer be booked.</p>
       )}
 
       <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 w-full">
           <SeatMap seats={seats} venueLayout={venue.layout} />
         </div>
-        <CartPanel eventId={eventId} onHoldSuccess={() => refetch()} onReleaseSuccess={() => refetch()} />
+        <CartPanel
+          eventId={eventId}
+          showId={activeShowId || data.showId || null}
+          showStartsAt={currentStartsAt}
+          onHoldSuccess={() => refetch()}
+          onReleaseSuccess={() => refetch()}
+        />
       </div>
     </main>
   );

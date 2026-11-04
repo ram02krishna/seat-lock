@@ -1,12 +1,15 @@
 'use client';
 
-import { use } from 'react';
+import { use, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Trash2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { formatINR, formatEventDateTime } from '@/lib/format';
 import { VenueBadge } from '@/components/venue-badge';
+import { DeleteEventModal } from '@/components/DeleteEventModal';
+import { ShowManager, ShowTimingItem } from '@/components/ShowManager';
 
 interface TierStat {
   tier: string;
@@ -42,6 +45,7 @@ interface EventStatsResponse {
     checkInRate: number;
   };
   tiers: TierStat[];
+  shows?: ShowTimingItem[];
   recentOrders: Array<{
     id: string;
     userEmail: string;
@@ -53,8 +57,10 @@ interface EventStatsResponse {
 
 export default function EventAnalyticsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
+  const router = useRouter();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const { data, isLoading, error } = useQuery<EventStatsResponse>({
+  const { data, isLoading, error, refetch } = useQuery<EventStatsResponse>({
     queryKey: ['organizer', 'event', eventId, 'stats'],
     queryFn: () => apiFetch(`/api/organizer/events/${eventId}/stats`),
     refetchInterval: 10000,
@@ -111,7 +117,7 @@ export default function EventAnalyticsPage({ params }: { params: Promise<{ id: s
               {event.venueName} · {formatEventDateTime(event.startsAt)}
             </p>
           </div>
-          <div className="flex gap-2 shrink-0">
+          <div className="flex gap-2 shrink-0 flex-wrap">
             <Link href={`/organizer/events/${event.id}/edit`} className="btn btn-primary btn-sm flex-1 sm:flex-initial">
               Edit event
             </Link>
@@ -121,9 +127,26 @@ export default function EventAnalyticsPage({ params }: { params: Promise<{ id: s
             <Link href="/staff/scanner" className="btn btn-secondary btn-sm flex-1 sm:flex-initial">
               Scanner
             </Link>
+            <button
+              type="button"
+              onClick={() => setDeleteOpen(true)}
+              className="btn btn-secondary text-bad hover:bg-bad/10 hover:border-bad/40 btn-sm flex-1 sm:flex-initial inline-flex items-center gap-1.5"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete event
+            </button>
           </div>
         </div>
       </header>
+
+      <DeleteEventModal
+        isOpen={deleteOpen}
+        eventId={event.id}
+        eventTitle={event.title}
+        soldTicketsCount={overview.soldSeats}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => router.push('/organizer')}
+      />
 
       <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         {stat('Revenue', formatINR(overview.revenueCents), `${overview.soldSeats} seats sold`)}
@@ -131,6 +154,14 @@ export default function EventAnalyticsPage({ params }: { params: Promise<{ id: s
         {stat('Sold', <>{overview.soldSeats}<span className="ml-1 text-sm sm:text-base font-normal text-ink-3">/ {overview.totalSeats}</span></>, 'Seats confirmed')}
         {stat('Checked in', <>{checkIn.checkedInCount}<span className="ml-1 text-sm sm:text-base font-normal text-ink-3">/ {checkIn.totalTickets}</span></>, `${checkIn.checkInRate}% entered`, checkIn.checkInRate)}
       </div>
+
+      {/* Show Timings Manager for Cinema Events */}
+      <ShowManager
+        eventId={event.id}
+        eventTitle={event.title}
+        shows={data.shows || []}
+        onUpdated={() => refetch()}
+      />
 
       <section className="space-y-3" aria-labelledby="tiers-h">
         <h2 id="tiers-h" className="font-display text-xl sm:text-2xl font-semibold">By section</h2>

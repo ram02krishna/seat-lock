@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, EyeOff, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { ExternalLink, Eye, EyeOff, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { formatINR, formatEventDateTime } from '@/lib/format';
 import { VenueBadge, VENUE_LABELS, VenueTypeKey } from '@/components/venue-badge';
 import { MAX_SEATS_PER_EVENT, MAX_SEATS_PER_ROW, optionalText, parseCount, previewSeating } from '@/lib/seating';
+import { DeleteEventModal } from '@/components/DeleteEventModal';
 
 const PRESETS: Record<VenueTypeKey, { venue: string; vip: string; premium: string; standard: string; blurb: string }> = {
   THEATER_DOLBY: { venue: 'Dolby Atmos Cinema', vip: '1200', premium: '700', standard: '400', blurb: 'Curved screen, recliners up front, centre aisle.' },
@@ -80,6 +81,13 @@ function Stat({ label, value, hint }: { label: string; value: React.ReactNode; h
   );
 }
 
+interface ExtraShowInput {
+  startsAt: string;
+  vip: string;
+  premium: string;
+  standard: string;
+}
+
 function CreateEventForm({ onDone }: { onDone: () => void }) {
   const queryClient = useQueryClient();
   const [venueType, setVenueType] = useState<VenueTypeKey>('THEATER_DOLBY');
@@ -96,6 +104,7 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
   const [vip, setVip] = useState(PRESETS.THEATER_DOLBY.vip);
   const [premium, setPremium] = useState(PRESETS.THEATER_DOLBY.premium);
   const [standard, setStandard] = useState(PRESETS.THEATER_DOLBY.standard);
+  const [extraShows, setExtraShows] = useState<ExtraShowInput[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const seating = previewSeating(totalSeats, seatsPerRow, vipSeats, premiumSeats);
@@ -118,11 +127,36 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
       const when = new Date(startsAt);
       if (when.getTime() <= Date.now()) throw new Error('The start time needs to be in the future.');
 
+      for (let i = 0; i < extraShows.length; i++) {
+        const s = extraShows[i];
+        if (!s.startsAt) throw new Error(`Select a date and time for showtime #${i + 2}.`);
+        const stDate = new Date(s.startsAt);
+        if (Number.isNaN(stDate.getTime()) || stDate.getTime() <= Date.now()) {
+          throw new Error(`Showtime #${i + 2} must be in the future.`);
+        }
+      }
+
       const pricing = {
         VIP: rupeesToPaise(vip, 'VIP'),
         PREMIUM: rupeesToPaise(premium, 'Premium'),
         STANDARD: rupeesToPaise(standard, 'Standard'),
       };
+
+      const showsPayload = venueType === 'THEATER_DOLBY'
+        ? [
+            { startsAt: when.toISOString(), pricing },
+            ...extraShows
+              .filter((t) => t.startsAt.trim().length > 0)
+              .map((t) => ({
+                startsAt: new Date(t.startsAt).toISOString(),
+                pricing: {
+                  VIP: rupeesToPaise(t.vip || vip, 'VIP'),
+                  PREMIUM: rupeesToPaise(t.premium || premium, 'Premium'),
+                  STANDARD: rupeesToPaise(t.standard || standard, 'Standard'),
+                },
+              })),
+          ]
+        : undefined;
 
       return apiFetch('/api/organizer/events', {
         method: 'POST',
@@ -135,6 +169,7 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
           location: optionalText(location),
           imageUrl: optionalText(imageUrl),
           pricing,
+          shows: showsPayload,
           totalSeats: parseCount(totalSeats),
           seatsPerRow: parseCount(seatsPerRow),
           vipSeats: parseCount(vipSeats),
@@ -219,6 +254,126 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
           </label>
           <input value={description} onChange={(e) => setDescription(e.target.value)} className="field" />
         </div>
+
+        {venueType === 'THEATER_DOLBY' && (
+          <div className="col-span-full rounded-lg border border-line bg-sunken/40 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <p className="text-sm font-semibold text-ink">
+                  Additional Cinema Show Timings <span className="font-normal text-ink-3">(optional)</span>
+                </p>
+                <p className="text-xs sm:text-[13px] text-ink-3">
+                  Add more showtimes for this movie across the same or multiple dates.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setExtraShows((prev) => [
+                    ...prev,
+                    {
+                      startsAt: '',
+                      vip: vip || PRESETS.THEATER_DOLBY.vip,
+                      premium: premium || PRESETS.THEATER_DOLBY.premium,
+                      standard: standard || PRESETS.THEATER_DOLBY.standard,
+                    },
+                  ])
+                }
+                className="btn btn-secondary btn-xs inline-flex items-center gap-1.5"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Showtime
+              </button>
+            </div>
+            {extraShows.map((st, idx) => (
+              <div
+                key={idx}
+                className="rounded-lg border border-line bg-surface p-3.5 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-ink">
+                    Showtime #{idx + 2}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setExtraShows((prev) => prev.filter((_, i) => i !== idx))}
+                    className="p-1 text-ink-3 hover:text-bad rounded transition-colors inline-flex items-center gap-1 text-xs"
+                    title="Remove showtime"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Remove</span>
+                  </button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-medium text-ink-2 mb-1">
+                      Show Date &amp; Time *
+                    </label>
+                    <input
+                      type="datetime-local"
+                      min={localNowForInput()}
+                      value={st.startsAt}
+                      onChange={(e) => {
+                        const next = [...extraShows];
+                        next[idx] = { ...next[idx], startsAt: e.target.value };
+                        setExtraShows(next);
+                      }}
+                      className="field !py-1.5 text-sm w-full"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-xs font-medium text-ink-2 mb-1">VIP (₹)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={st.vip}
+                        onChange={(e) => {
+                          const next = [...extraShows];
+                          next[idx] = { ...next[idx], vip: e.target.value };
+                          setExtraShows(next);
+                        }}
+                        className="field !py-1.5 text-sm w-full tabular-nums"
+                        placeholder={vip}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-ink-2 mb-1">Premium (₹)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={st.premium}
+                        onChange={(e) => {
+                          const next = [...extraShows];
+                          next[idx] = { ...next[idx], premium: e.target.value };
+                          setExtraShows(next);
+                        }}
+                        className="field !py-1.5 text-sm w-full tabular-nums"
+                        placeholder={premium}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-ink-2 mb-1">Standard (₹)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={st.standard}
+                        onChange={(e) => {
+                          const next = [...extraShows];
+                          next[idx] = { ...next[idx], standard: e.target.value };
+                          setExtraShows(next);
+                        }}
+                        className="field !py-1.5 text-sm w-full tabular-nums"
+                        placeholder={standard}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -398,6 +553,8 @@ function StaffSection() {
 export default function OrganizerDashboardPage() {
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState<EventStat | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: authData, isLoading: authLoading } = useQuery({
     queryKey: ['auth', 'me'],
@@ -479,37 +636,73 @@ export default function OrganizerDashboardPage() {
         ) : (
           <div className="card divide-y divide-line">
             {events.map((ev) => (
-              <div key={ev.id} className="grid gap-3 sm:gap-4 p-4 sm:p-5 md:grid-cols-[1fr_220px_150px] md:items-center">
+              <div
+                key={ev.id}
+                className="flex flex-col gap-4 p-4 sm:p-5 md:grid md:grid-cols-[minmax(0,1.3fr)_auto_minmax(0,0.85fr)] md:items-center md:gap-6 lg:gap-8"
+              >
                 <div className="min-w-0 space-y-1.5">
                   <VenueBadge type={ev.venueType} />
-                  <Link href={`/organizer/events/${ev.id}`} className="block truncate font-display text-lg sm:text-xl font-semibold hover:text-accent">
+                  <Link
+                    href={`/organizer/events/${ev.id}`}
+                    className="block font-display text-lg sm:text-xl font-semibold hover:text-accent line-clamp-2"
+                  >
                     {ev.title}
                   </Link>
-                  <p className="truncate text-xs sm:text-[13px] text-ink-3">
+                  <p className="text-xs sm:text-[13px] text-ink-3 line-clamp-1">
                     {ev.venueName} · {formatEventDateTime(ev.startsAt)}
                   </p>
                 </div>
 
-                <div className="space-y-1.5 border-t border-line/60 pt-2.5 md:border-0 md:pt-0">
-                  <div className="flex h-1.5 overflow-hidden rounded-full bg-line" role="img" aria-label={`${ev.soldSeats} sold, ${ev.heldSeats} held, ${ev.availableSeats} available`}>
-                    <div className="bg-accent" style={{ width: `${ev.totalSeats ? (ev.soldSeats / ev.totalSeats) * 100 : 0}%` }} />
-                    <div className="bg-warn/60" style={{ width: `${ev.totalSeats ? (ev.heldSeats / ev.totalSeats) * 100 : 0}%` }} />
+                <div className="w-full md:w-56 lg:w-64 space-y-1.5 border-t border-line/60 pt-2.5 md:border-0 md:pt-0 justify-self-center my-auto md:translate-y-2">
+                  <div
+                    className="flex h-1.5 overflow-hidden rounded-full bg-line"
+                    role="img"
+                    aria-label={`${ev.soldSeats} sold, ${ev.heldSeats} held, ${ev.availableSeats} available`}
+                  >
+                    <div
+                      className="bg-accent"
+                      style={{ width: `${ev.totalSeats ? (ev.soldSeats / ev.totalSeats) * 100 : 0}%` }}
+                    />
+                    <div
+                      className="bg-warn/60"
+                      style={{ width: `${ev.totalSeats ? (ev.heldSeats / ev.totalSeats) * 100 : 0}%` }}
+                    />
                   </div>
                   <p className="text-[11px] sm:text-xs tabular-nums text-ink-3">
                     {ev.soldSeats} sold · {ev.heldSeats} held · {ev.availableSeats} open
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between gap-3 md:block md:text-right border-t border-line/60 pt-2 md:border-0 md:pt-0">
-                  <p className="font-semibold tabular-nums text-sm sm:text-base">{formatINR(ev.revenueCents)}</p>
-                  <div className="flex items-center gap-3 md:justify-end">
-                    <Link href={`/organizer/events/${ev.id}/edit`} className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">
+                <div className="flex items-center justify-between gap-3 sm:gap-4 md:flex-col md:items-end md:justify-center border-t border-line/60 pt-3 md:border-0 md:pt-0 justify-self-end">
+                  <p className="font-semibold tabular-nums text-base sm:text-lg text-ink">
+                    {formatINR(ev.revenueCents)}
+                  </p>
+                  <div className="flex items-center gap-1.5 flex-wrap md:justify-end">
+                    <Link
+                      href={`/organizer/events/${ev.id}/edit`}
+                      className="btn btn-secondary btn-xs text-blue-600 dark:text-blue-400 border-blue-500/30 hover:border-blue-500/60 hover:bg-blue-500/10"
+                      title="Edit event"
+                    >
                       <Pencil className="h-3 w-3" />
                       Edit
                     </Link>
-                    <Link href={`/events/${ev.id}`} className="text-xs text-ink-3 underline hover:text-ink">
+                    <Link
+                      href={`/events/${ev.id}`}
+                      className="btn btn-secondary btn-xs text-ink-2 hover:text-ink hover:border-line-strong"
+                      title="View public page"
+                    >
+                      <ExternalLink className="h-3 w-3 text-ink-3" />
                       Public page
                     </Link>
+                    <button
+                      type="button"
+                      onClick={() => setEventToDelete(ev)}
+                      className="btn btn-secondary btn-xs text-red-600 dark:text-red-400 border-red-500/30 hover:border-red-500/60 hover:bg-red-500/10"
+                      title="Delete event"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Delete
+                    </button>
                   </div>
                 </div>
               </div>
@@ -577,6 +770,15 @@ export default function OrganizerDashboardPage() {
       </section>
 
       <StaffSection />
+
+      <DeleteEventModal
+        isOpen={!!eventToDelete}
+        eventId={eventToDelete?.id || ''}
+        eventTitle={eventToDelete?.title || ''}
+        soldTicketsCount={eventToDelete?.soldSeats || 0}
+        onClose={() => setEventToDelete(null)}
+        onDeleted={() => queryClient.invalidateQueries({ queryKey: ['organizer'] })}
+      />
     </main>
   );
 }

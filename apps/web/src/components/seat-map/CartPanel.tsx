@@ -8,17 +8,19 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronUp, Clock, X } from 'lucide-react';
 import { useCartStore } from '@/store/cartStore';
 import { apiFetch } from '@/lib/api';
-import { formatINR } from '@/lib/format';
+import { formatINR, formatEventDateTime } from '@/lib/format';
 import { useCountdown, formatClock } from '@/hooks/useCountdown';
 
 interface CartPanelProps {
   eventId: string;
+  showId?: string | null;
+  showStartsAt?: string | null;
   /** Called after anything that may have changed seat availability, so the map can refetch */
   onHoldSuccess?: () => void;
   onReleaseSuccess?: () => void;
 }
 
-export function CartPanel({ eventId, onHoldSuccess, onReleaseSuccess }: CartPanelProps) {
+export function CartPanel({ eventId, showId, showStartsAt, onHoldSuccess, onReleaseSuccess }: CartPanelProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { selectedSeats, heldSeatIds, holdExpiresAt, toggleSeat, clearSelection, setHeldSeats, clearHold } =
@@ -38,7 +40,8 @@ export function CartPanel({ eventId, onHoldSuccess, onReleaseSuccess }: CartPane
 
   const isHeld = heldSeatIds.length > 0 && !!holdExpiresAt;
   const total = selectedSeats.reduce((sum, s) => sum + s.price, 0);
-  const loginHref = `/login?redirect=${encodeURIComponent(`/events/${eventId}`)}`;
+  const loginRedirect = showId ? `/events/${eventId}?showId=${showId}` : `/events/${eventId}`;
+  const loginHref = `/login?redirect=${encodeURIComponent(loginRedirect)}`;
 
   const remaining = useCountdown(isHeld ? holdExpiresAt : null, () => {
     clearHold();
@@ -50,6 +53,18 @@ export function CartPanel({ eventId, onHoldSuccess, onReleaseSuccess }: CartPane
   function patchSeatCache(status: 'HELD' | 'AVAILABLE', expiresAt: string | null) {
     const ids = new Set(selectedSeats.map((s) => s.id));
     const rawIds = new Set(selectedSeats.map((s) => s.seatId));
+    queryClient.setQueryData(['events', eventId, 'seats', showId || 'default'], (old: any) => {
+      if (!old?.seats) return old;
+      return {
+        ...old,
+        seats: old.seats.map((seat: any) =>
+          ids.has(seat.id) || rawIds.has(seat.seatId)
+            ? { ...seat, status, isHeldByMe: status === 'HELD', holdExpiresAt: expiresAt }
+            : seat,
+        ),
+      };
+    });
+    // Also patch default key if any
     queryClient.setQueryData(['events', eventId, 'seats'], (old: any) => {
       if (!old?.seats) return old;
       return {
@@ -70,13 +85,17 @@ export function CartPanel({ eventId, onHoldSuccess, onReleaseSuccess }: CartPane
     try {
       const res = await apiFetch(`/api/events/${eventId}/hold`, {
         method: 'POST',
-        body: JSON.stringify({ seatIds: selectedSeats.map((s) => s.seatId) }),
+        body: JSON.stringify({
+          seatIds: selectedSeats.map((s) => s.seatId),
+          showId: showId || undefined,
+        }),
       });
       patchSeatCache('HELD', res.holdExpiresAt);
       setHeldSeats(
         selectedSeats.map((s) => s.id),
         res.holdExpiresAt,
         eventId,
+        showId || undefined,
       );
       setNeedsSignIn(false);
       onHoldSuccess?.();
@@ -105,7 +124,7 @@ export function CartPanel({ eventId, onHoldSuccess, onReleaseSuccess }: CartPane
           : heldSeatIds;
       await apiFetch(`/api/events/${eventId}/release`, {
         method: 'POST',
-        body: JSON.stringify({ seatIds }),
+        body: JSON.stringify({ seatIds, showId: showId || undefined }),
       });
       patchSeatCache('AVAILABLE', null);
       clearHold();
@@ -151,8 +170,12 @@ export function CartPanel({ eventId, onHoldSuccess, onReleaseSuccess }: CartPane
     </ul>
   );
 
+  const checkoutUrl = showId
+    ? `/checkout?eventId=${eventId}&showId=${showId}`
+    : `/checkout?eventId=${eventId}`;
+
   const primaryAction = isHeld ? (
-    <button type="button" onClick={() => router.push(`/checkout?eventId=${eventId}`)} className="btn btn-primary w-full">
+    <button type="button" onClick={() => router.push(checkoutUrl)} className="btn btn-primary w-full">
       <span className="hidden sm:inline">Continue to checkout</span>
       <span className="sm:hidden">Checkout</span>
     </button>
@@ -188,6 +211,12 @@ export function CartPanel({ eventId, onHoldSuccess, onReleaseSuccess }: CartPane
           <h2 className="font-display text-xl font-semibold">{isHeld ? 'Seats on hold' : 'Your seats'}</h2>
           <span className="text-xs tabular-nums text-ink-3">{selectedSeats.length} of 6</span>
         </div>
+        {showStartsAt && (
+          <div className="mt-1 flex items-center gap-1.5 text-xs text-ink-2 font-medium">
+            <Clock className="h-3.5 w-3.5 text-accent shrink-0" />
+            <span>Show: {formatEventDateTime(showStartsAt)}</span>
+          </div>
+        )}
 
         {isHeld && remaining !== null && (
           <div

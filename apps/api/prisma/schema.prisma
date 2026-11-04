@@ -67,6 +67,7 @@ model Event {
   organizer   User?       @relation("OrganizerEvents", fields: [organizerId], references: [id], onDelete: SetNull)
   title       String
   description String?
+  category    String?
   location    String?
   imageUrl    String?
   startsAt    DateTime
@@ -78,9 +79,27 @@ model Event {
 
   eventSeats  EventSeat[]
   orders      Order[]
+  shows       Show[]
 
   @@index([venueId])
   @@index([organizerId])
+}
+
+model Show {
+  id            String      @id @default(uuid())
+  eventId       String
+  event         Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  startsAt      DateTime
+  pricing       Json?       // Tier pricing override { VIP: paise, PREMIUM: paise, STANDARD: paise }
+  totalSeats    Int         @default(0)
+  status        EventStatus @default(PUBLISHED)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  eventSeats    EventSeat[]
+  orders        Order[]
+
+  @@index([eventId, startsAt])
 }
 
 model Seat {
@@ -105,6 +124,8 @@ model EventSeat {
   id            String      @id @default(uuid())
   eventId       String
   event         Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  showId        String?
+  show          Show?       @relation(fields: [showId], references: [id], onDelete: Cascade)
   seatId        String
   seat          Seat        @relation(fields: [seatId], references: [id], onDelete: Cascade)
   price         Int
@@ -118,10 +139,13 @@ model EventSeat {
 
   ticket        Ticket?
 
-  @@unique([eventId, seatId])
+  @@index([eventId, seatId])
+  @@index([showId, seatId])
   @@index([eventId, status])
+  @@index([showId, status])
   @@index([holdExpiresAt])
   @@index([eventId, heldByUserId])
+  @@index([showId, heldByUserId])
 }
 
 model Order {
@@ -130,6 +154,8 @@ model Order {
   user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   eventId        String
   event          Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  showId         String?
+  show           Show?       @relation(fields: [showId], references: [id], onDelete: SetNull)
   status         OrderStatus @default(PENDING)
   totalCents     Int
   idempotencyKey String?     @unique
@@ -139,6 +165,7 @@ model Order {
   tickets        Ticket[]
 
   @@index([userId, eventId])
+  @@index([showId])
 }
 
 model Ticket {

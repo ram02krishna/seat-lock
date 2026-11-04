@@ -51,19 +51,19 @@ export function getIO(): Server {
   return io;
 }
 
-export function broadcastSeatsHeld(eventId: string, data: { seatIds: string[]; heldByUserId: string; holdExpiresAt: string }) {
+export function broadcastSeatsHeld(eventId: string, data: { seatIds: string[]; heldByUserId: string; holdExpiresAt: string; showId?: string }) {
   if (io) {
     io.to(`event:${eventId}`).emit('seats:held', data);
   }
 }
 
-export function broadcastSeatsReleased(eventId: string, data: { seatIds: string[] }) {
+export function broadcastSeatsReleased(eventId: string, data: { seatIds: string[]; showId?: string }) {
   if (io) {
     io.to(`event:${eventId}`).emit('seats:released', data);
   }
 }
 
-export function broadcastSeatsSold(eventId: string, data: { seatIds: string[] }) {
+export function broadcastSeatsSold(eventId: string, data: { seatIds: string[]; showId?: string }) {
   if (io) {
     io.to(`event:${eventId}`).emit('seats:sold', data);
   }
@@ -73,5 +73,12 @@ export function broadcastSeatsSold(eventId: string, data: { seatIds: string[] })
 export function broadcastEventUpdated(eventId: string) {
   if (io) {
     io.to(`event:${eventId}`).emit('event:updated', { eventId });
+  }
+}
+
+/** Tells everyone viewing an event that it was deleted by the organizer. */
+export function broadcastEventDeleted(eventId: string) {
+  if (io) {
+    io.to(`event:${eventId}`).emit('event:deleted', { eventId });
   }
 }

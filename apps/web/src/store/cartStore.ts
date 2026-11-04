@@ -13,15 +13,18 @@ export interface SeatItem {
 
 interface CartState {
   eventId: string | null;
+  showId: string | null;
+  showStartsAt: string | null;
   selectedSeats: SeatItem[];
   heldSeatIds: string[];
   holdExpiresAt: string | null;
   setEventId: (eventId: string | null) => void;
+  setShowId: (showId: string | null, showStartsAt?: string | null) => void;
   toggleSeat: (seat: SeatItem) => { success: boolean; error?: string };
   clearSelection: () => void;
   removeSeats: (ids: string[]) => void;
-  setHeldSeats: (seatIds: string[], expiresAt: string, eventId?: string) => void;
-  restoreHold: (eventId: string, seats: SeatItem[], expiresAt: string) => void;
+  setHeldSeats: (seatIds: string[], expiresAt: string, eventId?: string, showId?: string) => void;
+  restoreHold: (eventId: string, seats: SeatItem[], expiresAt: string, showId?: string, showStartsAt?: string) => void;
   clearHold: () => void;
 }
 
@@ -29,6 +32,8 @@ export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
       eventId: null,
+      showId: null,
+      showStartsAt: null,
       selectedSeats: [],
       heldSeatIds: [],
       holdExpiresAt: null,
@@ -39,13 +44,20 @@ export const useCartStore = create<CartState>()(
         // The cart only ever describes the event being viewed. Switching events drops the local
         // selection; any server-side hold stays put and is restored from the API when relevant.
         if (currentEventId !== eventId) {
-          set({ eventId, selectedSeats: [], heldSeatIds: [], holdExpiresAt: null });
+          set({ eventId, showId: null, showStartsAt: null, selectedSeats: [], heldSeatIds: [], holdExpiresAt: null });
           return;
         }
 
         // Same event: drop a hold that has already lapsed
         if (heldSeatIds.length > 0 && holdExpiresAt && new Date(holdExpiresAt) <= new Date()) {
           set({ selectedSeats: [], heldSeatIds: [], holdExpiresAt: null });
+        }
+      },
+
+      setShowId: (showId, showStartsAt = null) => {
+        const { showId: currentShowId } = get();
+        if (currentShowId !== showId) {
+          set({ showId, showStartsAt, selectedSeats: [] });
         }
       },
 
@@ -90,16 +102,19 @@ export const useCartStore = create<CartState>()(
           selectedSeats: state.selectedSeats.filter((s) => !ids.includes(s.id)),
         })),
 
-      setHeldSeats: (seatIds, expiresAt, eventId) =>
+      setHeldSeats: (seatIds, expiresAt, eventId, showId) =>
         set((state) => ({
           heldSeatIds: seatIds,
           holdExpiresAt: expiresAt,
           eventId: eventId || state.eventId,
+          showId: showId || state.showId,
         })),
 
-      restoreHold: (eventId, seats, expiresAt) =>
+      restoreHold: (eventId, seats, expiresAt, showId, showStartsAt) =>
         set({
           eventId,
+          showId: showId || null,
+          showStartsAt: showStartsAt || null,
           selectedSeats: seats,
           heldSeatIds: seats.map((s) => s.id),
           holdExpiresAt: expiresAt,

@@ -2,12 +2,15 @@
 
 import { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, RefreshCw, Trash2 } from 'lucide-react';
 import { apiFetch, ApiError } from '@/lib/api';
 import { formatINR } from '@/lib/format';
 import { VenueBadge } from '@/components/venue-badge';
 import { MAX_SEATS_PER_EVENT, optionalText } from '@/lib/seating';
+import { DeleteEventModal } from '@/components/DeleteEventModal';
+import { ShowManager, ShowTimingItem } from '@/components/ShowManager';
 
 type Tier = 'VIP' | 'PREMIUM' | 'STANDARD';
 const TIERS: Tier[] = ['VIP', 'PREMIUM', 'STANDARD'];
@@ -26,6 +29,7 @@ interface EditData {
     venueName: string;
     venueType: string;
   };
+  shows?: ShowTimingItem[];
   seating: {
     capacity: number;
     seatsPerRow: number;
@@ -68,7 +72,9 @@ function paiseToRupees(paise: number | null | undefined) {
 
 export default function EditEventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
+  const router = useRouter();
   const queryClient = useQueryClient();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<EditData>({
     queryKey: ['organizer', 'event', eventId, 'edit'],
@@ -390,6 +396,29 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
             <textarea id="description" value={form.description} onChange={set('description')} maxLength={5000} rows={3} className={field} />
           </div>
 
+          {data.event.venueType === 'THEATER_DOLBY' && (
+            <ShowManager
+              eventId={eventId}
+              eventTitle={data.event.title}
+              shows={data.shows || []}
+              defaultPrices={{
+                VIP: data.pricing.VIP ?? undefined,
+                PREMIUM: data.pricing.PREMIUM ?? undefined,
+                STANDARD: data.pricing.STANDARD ?? undefined,
+              }}
+              title="Additional Cinema Show Timings"
+              optionalBadge
+              subtitle="Add more showtimes for this movie across the same or multiple dates."
+              buttonLabel="Add Showtime"
+              compactContainer
+              onUpdated={() => {
+                refetch();
+                queryClient.invalidateQueries({ queryKey: ['organizer'] });
+                queryClient.invalidateQueries({ queryKey: ['events'] });
+              }}
+            />
+          )}
+
           <div>
             <label className="field-label" htmlFor="imageUrl">Image URL</label>
             <input id="imageUrl" type="url" value={form.imageUrl} onChange={set('imageUrl')} placeholder="https://…" className={field} />
@@ -472,6 +501,35 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
           </div>
         )}
       </form>
+
+      {/* Danger Zone: Event Deletion */}
+      <section className="card border-bad/30 bg-bad/5 p-5 sm:p-6 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="font-display font-semibold text-base text-ink">Delete this event</h3>
+            <p className="text-xs text-ink-3">
+              Permanently remove this event and cancel all bookings. Only the organizer who created it can delete it.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDeleteOpen(true)}
+            className="btn bg-bad hover:bg-bad/90 text-white font-semibold btn-sm inline-flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete Event
+          </button>
+        </div>
+      </section>
+
+      <DeleteEventModal
+        isOpen={deleteOpen}
+        eventId={eventId}
+        eventTitle={data.event.title}
+        soldTicketsCount={data.seating.sold}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => router.push('/organizer')}
+      />
     </main>
   );
 }

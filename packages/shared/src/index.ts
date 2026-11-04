@@ -144,12 +144,25 @@ const nullableTextSchema = (max: number, label: string) =>
     z.null(),
   ]);
 
+export const CreateShowSchema = z.object({
+  startsAt: z.string().datetime('Must be a valid ISO datetime string'),
+  pricing: PricingSchema.optional(),
+});
+export type CreateShowInput = z.infer<typeof CreateShowSchema>;
+
+export const UpdateShowSchema = z.object({
+  startsAt: z.string().datetime('Must be a valid ISO datetime string').optional(),
+  pricing: PricingSchema.optional(),
+});
+export type UpdateShowInput = z.infer<typeof UpdateShowSchema>;
+
 export const CreateEventSchema = z
   .object({
     /** @deprecated Seats are now generated per event from `totalSeats`; kept so old clients still validate. */
     venueId: z.string().optional(),
     venueName: z.string().trim().max(150).optional(),
     venueType: VenueTypeEnum.optional().default('THEATER_DOLBY'),
+    category: z.string().trim().max(50).optional(),
     title: z.string().trim().min(2, 'Event title is required').max(150, 'Title must be at most 150 characters'),
     description: z.string().trim().max(5000, 'Description must be at most 5000 characters').optional(),
     startsAt: z.string().datetime('Must be a valid ISO datetime string'),
@@ -157,6 +170,7 @@ export const CreateEventSchema = z
     imageUrl: nullableImageSchema.optional(),
     pricing: PricingSchema.optional(), // tier -> priceCents override
     totalSeats: seatCountSchema,
+    shows: z.array(CreateShowSchema).optional(),
     seatsPerRow: z
       .number()
       .int('Seats per row must be a whole number')
@@ -202,11 +216,13 @@ export type UpdateEventInput = z.infer<typeof UpdateEventSchema>;
 // Seat hold schemas
 export const HoldSeatsSchema = z.object({
   seatIds: z.array(z.string().uuid('Invalid seat ID')).min(1, 'Select at least one seat').max(6, 'Maximum 6 seats per hold'),
+  showId: z.string().uuid('Invalid show ID').optional(),
 });
 export type HoldSeatsInput = z.infer<typeof HoldSeatsSchema>;
 
 export const ReleaseSeatsSchema = z.object({
   seatIds: z.array(z.string().uuid('Invalid seat ID')).min(1, 'Select at least one seat').max(6, 'Maximum 6 seats per release'),
+  showId: z.string().uuid('Invalid show ID').optional(),
 });
 export type ReleaseSeatsInput = z.infer<typeof ReleaseSeatsSchema>;
 
@@ -214,6 +230,7 @@ export type ReleaseSeatsInput = z.infer<typeof ReleaseSeatsSchema>;
 export const ConfirmOrderSchema = z.object({
   eventId: z.string().uuid('Invalid event ID'),
   seatIds: z.array(z.string().uuid('Invalid seat ID')).min(1, 'Select at least one seat').max(6),
+  showId: z.string().uuid('Invalid show ID').optional(),
   idempotencyKey: z.string().uuid('Invalid idempotency key').optional(),
 });
 export type ConfirmOrderInput = z.infer<typeof ConfirmOrderSchema>;

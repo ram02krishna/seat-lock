@@ -26,9 +26,10 @@ interface SeatPayload {
   seatIds: string[];
   heldByUserId?: string;
   holdExpiresAt?: string;
+  showId?: string;
 }
 
-export function useEventSocket(eventId: string) {
+export function useEventSocket(eventId: string, currentShowId?: string | null) {
   const queryClient = useQueryClient();
   const socketRef = useRef<Socket | null>(null);
 
@@ -48,94 +49,43 @@ export function useEventSocket(eventId: string) {
 
     // Anything that happened while we were disconnected was missed, so refetch on reconnect
     const handleReconnect = () => {
-      queryClient.invalidateQueries({ queryKey: ['events', eventId, 'seats'] });
+      queryClient.invalidateQueries({ queryKey: ['events', eventId] });
     };
 
     socket.io.on('reconnect', handleReconnect);
 
     // Real-time seat updates
     const onSeatsHeld = (data: SeatPayload) => {
+      if (data.showId && currentShowId && data.showId !== currentShowId) return;
       // Work out whether this hold is ours, so our own seats never render as "held by someone else"
       const me = queryClient.getQueryData<{ user?: { id: string } }>(['auth', 'me'])?.user?.id;
       const mine = !!me && data.heldByUserId === me;
-      queryClient.setQueryData(
-        ['events', eventId, 'seats'],
-        (old: { eventId: string; venue: any; seats: SeatData[] } | undefined) => {
-          if (!old) return old;
-          const heldSet = new Set(data.seatIds);
-          return {
-            ...old,
-            seats: old.seats.map((seat) => {
-              if (heldSet.has(seat.seatId) || heldSet.has(seat.id)) {
-                return {
-                  ...seat,
-                  status: 'HELD' as const,
-                  isHeldByMe: mine,
-                  holdExpiresAt: data.holdExpiresAt || null,
-                };
-              }
-              return seat;
-            }),
-          };
-        }
-      );
+      queryClient.invalidateQueries({ queryKey: ['events', eventId, 'seats'] });
     };
 
     const onSeatsReleased = (data: SeatPayload) => {
-      queryClient.setQueryData(
-        ['events', eventId, 'seats'],
-        (old: { eventId: string; venue: any; seats: SeatData[] } | undefined) => {
-          if (!old) return old;
-          const releasedSet = new Set(data.seatIds);
-          return {
-            ...old,
-            seats: old.seats.map((seat) => {
-              if (releasedSet.has(seat.seatId) || releasedSet.has(seat.id)) {
-                return {
-                  ...seat,
-                  status: 'AVAILABLE' as const,
-                  isHeldByMe: false,
-                  holdExpiresAt: null,
-                };
-              }
-              return seat;
-            }),
-          };
-        }
-      );
+      if (data.showId && currentShowId && data.showId !== currentShowId) return;
+      queryClient.invalidateQueries({ queryKey: ['events', eventId, 'seats'] });
     };
 
     const onSeatsSold = (data: SeatPayload) => {
-      queryClient.setQueryData(
-        ['events', eventId, 'seats'],
-        (old: { eventId: string; venue: any; seats: SeatData[] } | undefined) => {
-          if (!old) return old;
-          const soldSet = new Set(data.seatIds);
-          return {
-            ...old,
-            seats: old.seats.map((seat) => {
-              if (soldSet.has(seat.seatId) || soldSet.has(seat.id)) {
-                return {
-                  ...seat,
-                  status: 'SOLD' as const,
-                  isHeldByMe: false,
-                  holdExpiresAt: null,
-                };
-              }
-              return seat;
-            }),
-          };
-        }
-      );
+      if (data.showId && currentShowId && data.showId !== currentShowId) return;
+      queryClient.invalidateQueries({ queryKey: ['events', eventId, 'seats'] });
     };
 
     // The organizer edited the event (capacity, prices, date...): reload the seat map and listings
     const onEventUpdated = () => {
-      queryClient.invalidateQueries({ queryKey: ['events', eventId, 'seats'] });
+      queryClient.invalidateQueries({ queryKey: ['events', eventId] });
       queryClient.invalidateQueries({ queryKey: ['events'], exact: true });
     };
 
+    const onEventDeleted = () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      window.location.href = '/';
+    };
+
     socket.on('event:updated', onEventUpdated);
+    socket.on('event:deleted', onEventDeleted);
     socket.on('seats:held', onSeatsHeld);
     socket.on('seats:released', onSeatsReleased);
     socket.on('seats:sold', onSeatsSold);
@@ -144,12 +94,13 @@ export function useEventSocket(eventId: string) {
       socket.off('connect', joinRoom);
       socket.io.off('reconnect', handleReconnect);
       socket.off('event:updated', onEventUpdated);
+      socket.off('event:deleted', onEventDeleted);
       socket.off('seats:held', onSeatsHeld);
       socket.off('seats:released', onSeatsReleased);
       socket.off('seats:sold', onSeatsSold);
       socket.emit('leave:event', eventId);
     };
-  }, [eventId, queryClient]);
+  }, [eventId, currentShowId, queryClient]);
 
   return socketRef.current;
 }

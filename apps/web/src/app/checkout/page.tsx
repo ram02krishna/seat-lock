@@ -26,8 +26,19 @@ function CheckoutContent() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const eventId = searchParams.get('eventId');
+  const urlShowId = searchParams.get('showId');
 
-  const { eventId: cartEventId, selectedSeats, holdExpiresAt, heldSeatIds, restoreHold, clearHold } = useCartStore();
+  const {
+    eventId: cartEventId,
+    showId: cartShowId,
+    selectedSeats,
+    holdExpiresAt,
+    heldSeatIds,
+    restoreHold,
+    clearHold,
+  } = useCartStore();
+
+  const showId = urlShowId || cartShowId || undefined;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,8 +56,8 @@ function CheckoutContent() {
   const user = authData?.user;
 
   const { data: seatData, isLoading: seatsLoading } = useQuery({
-    queryKey: ['events', eventId, 'seats'],
-    queryFn: () => apiFetch(`/api/events/${eventId}/seats`),
+    queryKey: ['events', eventId, 'seats', showId || 'default'],
+    queryFn: () => apiFetch(`/api/events/${eventId}/seats${showId ? `?showId=${showId}` : ''}`),
     enabled: !!eventId,
     staleTime: 5000,
   });
@@ -55,8 +66,8 @@ function CheckoutContent() {
   useEffect(() => {
     if (!eventId || !seatData?.seats) return;
     const hold = deriveMyHold(seatData.seats);
-    if (hold) restoreHold(eventId, hold.seats, hold.expiresAt);
-  }, [seatData, eventId, restoreHold]);
+    if (hold) restoreHold(eventId, hold.seats, hold.expiresAt, showId, seatData?.show?.startsAt);
+  }, [seatData, eventId, showId, restoreHold]);
 
   // Only trust the cart if it belongs to this event
   const cartMatches = !!eventId && cartEventId === eventId;
@@ -83,6 +94,7 @@ function CheckoutContent() {
         body: JSON.stringify({
           eventId,
           seatIds: seats.map((s) => s.seatId),
+          showId: showId || undefined,
           idempotencyKey: idempotencyKey.current,
         }),
       });
@@ -182,7 +194,13 @@ function CheckoutContent() {
           <div className="p-4 sm:p-5">
             <p className="eyebrow">Event</p>
             <p className="mt-1 break-words font-display text-lg sm:text-xl font-semibold">{eventInfo.title}</p>
-            {eventInfo.startsAt && <p className="text-xs sm:text-sm text-ink-2">{formatEventDateTime(eventInfo.startsAt)}</p>}
+            {seatData?.show?.startsAt ? (
+              <p className="text-xs sm:text-sm font-medium text-accent">
+                Showtime: {formatEventDateTime(seatData.show.startsAt)}
+              </p>
+            ) : eventInfo.startsAt ? (
+              <p className="text-xs sm:text-sm text-ink-2">{formatEventDateTime(eventInfo.startsAt)}</p>
+            ) : null}
           </div>
         )}
 

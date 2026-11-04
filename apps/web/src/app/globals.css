@@ -134,6 +134,9 @@
   .btn-sm {
     @apply px-3 py-1.5 text-[13px];
   }
+  .btn-xs {
+    @apply h-7 px-2.5 py-0 text-xs rounded-md gap-1.5 font-medium;
+  }
   .btn-primary {
     @apply bg-accent text-accent-fg hover:bg-accent-hover;
   }

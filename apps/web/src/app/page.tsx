@@ -21,6 +21,7 @@ interface EventItem {
   totalSeats: number;
   availableSeats: number;
   minPrice?: number;
+  shows?: Array<{ id: string; startsAt: string; pricing?: any }>;
 }
 
 const dayFmt = new Intl.DateTimeFormat('en-IN', { day: 'numeric' });
@@ -61,7 +62,14 @@ function EventRow({ event, onPrefetch }: { event: EventItem; onPrefetch: (id: st
         {/* Details */}
         <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 p-3.5 sm:flex-row sm:items-center sm:gap-6 sm:p-5">
           <div className="min-w-0 space-y-1.5 sm:space-y-2">
-            <VenueBadge type={event.venue?.layout?.type} />
+            <div className="flex items-center gap-2 flex-wrap">
+              <VenueBadge type={event.venue?.layout?.type} />
+              {event.shows && event.shows.length > 1 && (
+                <span className="tag text-[10px] bg-accent/10 text-accent font-semibold">
+                  {event.shows.length} shows
+                </span>
+              )}
+            </div>
             <h2 className="font-display text-[18px] sm:text-2xl font-bold leading-snug tracking-tight">
               {event.title}
             </h2>

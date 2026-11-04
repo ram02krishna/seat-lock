@@ -9,8 +9,9 @@ export async function holdSeats(params: {
   eventId: string;
   seatIds: string[];
   userId: string;
+  showId?: string;
 }) {
-  const { eventId, seatIds, userId } = params;
+  const { eventId, seatIds, userId, showId } = params;
 
   if (seatIds.length === 0) {
     throw new AppError(400, 'Select at least one seat');
@@ -65,14 +66,19 @@ export async function holdSeats(params: {
         status: 'HELD',
         holdExpiresAt: { gt: new Date() },
       },
-      select: { id: true, seatId: true, eventId: true },
+      select: { id: true, seatId: true, eventId: true, showId: true },
     });
 
     const releasedSeatIds: string[] = [];
     const releasedElsewhere: Record<string, string[]> = {};
 
     const seatsToRelease = existingUserHolds.filter(
-      (h) => !(h.eventId === eventId && (sortedIds.includes(h.id) || sortedIds.includes(h.seatId))),
+      (h) =>
+        !(
+          h.eventId === eventId &&
+          (showId ? h.showId === showId : true) &&
+          (sortedIds.includes(h.id) || sortedIds.includes(h.seatId))
+        ),
     );
 
     if (seatsToRelease.length > 0) {
@@ -110,6 +116,7 @@ export async function holdSeats(params: {
         version = version + 1,
         "updatedAt" = NOW()
       WHERE "eventId" = ${eventId}
+        ${showId ? Prisma.sql`AND "showId" = ${showId}` : Prisma.sql``}
         AND ("seatId" IN (${Prisma.join(sortedIds)}) OR id IN (${Prisma.join(sortedIds)}))
         AND (
           status = 'AVAILABLE'::"SeatStatus"
@@ -154,8 +161,9 @@ export async function releaseSeats(params: {
   eventId: string;
   seatIds: string[];
   userId: string;
+  showId?: string;
 }) {
-  const { eventId, seatIds, userId } = params;
+  const { eventId, seatIds, userId, showId } = params;
   const ids = [...new Set(seatIds)];
 
   if (ids.length === 0) {
@@ -171,6 +179,7 @@ export async function releaseSeats(params: {
       version = version + 1,
       "updatedAt" = NOW()
     WHERE "eventId" = ${eventId}
+      ${showId ? Prisma.sql`AND "showId" = ${showId}` : Prisma.sql``}
       AND "heldByUserId" = ${userId}
       AND ("seatId" IN (${Prisma.join(ids)}) OR id IN (${Prisma.join(ids)}))
       AND status = 'HELD'::"SeatStatus"

@@ -22,11 +22,23 @@ eventsRouter.get('/', async (_req: Request, res: Response, next: NextFunction) =
     }
 
     // Events that have already started are no longer bookable, so they don't belong in the list
+    // unless they have upcoming showtimes in the future
+    const now = new Date();
     const events = await prisma.event.findMany({
-      where: { status: 'PUBLISHED', startsAt: { gt: new Date() } },
+      where: {
+        status: 'PUBLISHED',
+        OR: [
+          { startsAt: { gt: now } },
+          { shows: { some: { startsAt: { gt: now } } } },
+        ],
+      },
       include: {
         venue: {
           select: { id: true, name: true, layout: true },
+        },
+        shows: {
+          where: { startsAt: { gt: now } },
+          orderBy: { startsAt: 'asc' },
         },
       },
       orderBy: { startsAt: 'asc' },
@@ -57,14 +69,20 @@ eventsRouter.get('/', async (_req: Request, res: Response, next: NextFunction) =
         id: event.id,
         title: event.title,
         description: event.description,
+        category: event.category,
         location: event.location,
         imageUrl: event.imageUrl,
-        startsAt: event.startsAt,
+        startsAt: event.shows.length > 0 ? event.shows[0]!.startsAt : event.startsAt,
         status: event.status,
         venue: event.venue,
         totalSeats: Number(st?.total ?? 0),
         availableSeats: Number(st?.available ?? 0),
         minPrice: st?.minPrice ?? 0,
+        shows: event.shows.map((s) => ({
+          id: s.id,
+          startsAt: s.startsAt,
+          pricing: s.pricing,
+        })),
       };
     });
 
@@ -96,6 +114,7 @@ eventsRouter.get('/active-hold', async (req: Request, res: Response, next: NextF
       },
       include: {
         seat: true,
+        show: { select: { id: true, startsAt: true } },
         event: {
           select: {
             id: true,
@@ -133,9 +152,11 @@ eventsRouter.get('/active-hold', async (req: Request, res: Response, next: NextF
     return res.status(200).json({
       hold: {
         eventId: event.id,
+        showId: heldSeats[0]?.showId || null,
+        showStartsAt: heldSeats[0]?.show?.startsAt || null,
         eventTitle: event.title,
         venueName: event.venue?.name,
-        startsAt: event.startsAt,
+        startsAt: heldSeats[0]?.show?.startsAt || event.startsAt,
         holdExpiresAt: earliestExpiry?.toISOString() || null,
         seats: heldSeats.map((es) => ({
           id: es.id,
@@ -154,7 +175,7 @@ eventsRouter.get('/active-hold', async (req: Request, res: Response, next: NextF
   }
 });
 
-// Public: Get single event details with venue layout
+// Public: Get single event details with venue layout and available showtimes
 eventsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const eventId = req.params.id as string;
@@ -169,40 +190,116 @@ eventsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction)
       return next(new AppError(404, 'Event not found'));
     }
 
-    res.status(200).json({ event });
+    const shows = await prisma.show.findMany({
+      where: { eventId },
+      include: {
+        eventSeats: {
+          select: { status: true, price: true, holdExpiresAt: true },
+        },
+      },
+      orderBy: { startsAt: 'asc' },
+    });
+
+    const now = new Date();
+    const showsWithStats = shows.map((s) => {
+      const total = s.eventSeats.length;
+      const available = s.eventSeats.filter(
+        (es) => es.status === 'AVAILABLE' || (es.status === 'HELD' && es.holdExpiresAt && new Date(es.holdExpiresAt) < now)
+      ).length;
+      const sold = s.eventSeats.filter((es) => es.status === 'SOLD').length;
+      const minPrice = s.eventSeats.length > 0 ? Math.min(...s.eventSeats.map((es) => es.price)) : 0;
+      return {
+        id: s.id,
+        startsAt: s.startsAt,
+        pricing: s.pricing,
+        totalSeats: total,
+        availableSeats: available,
+        soldSeats: sold,
+        soldOut: total > 0 && available === 0,
+        minPrice,
+      };
+    });
+
+    res.status(200).json({
+      event: {
+        ...event,
+        shows: showsWithStats,
+      },
+    });
   } catch (err) {
     next(err);
   }
 });
 
-// Public: Get event seats with computed real-time availability
+// Public: Get event seats with computed real-time availability for an event or specific show
 eventsRouter.get('/:id/seats', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const eventId = req.params.id as string;
+    const requestedShowId = typeof req.query.showId === 'string' && req.query.showId ? req.query.showId : undefined;
 
-    const [event, eventSeats] = await Promise.all([
-      prisma.event.findUnique({
-        where: { id: eventId },
-        include: { venue: true },
-      }),
-      prisma.eventSeat.findMany({
-        where: { eventId },
-        include: {
-          seat: true,
-        },
-        orderBy: [
-          { seat: { section: 'asc' } },
-          { seat: { row: 'asc' } },
-          { seat: { number: 'asc' } },
-        ],
-      }),
-    ]);
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      include: { venue: true },
+    });
 
     if (!event || event.status !== 'PUBLISHED') {
       return next(new AppError(404, 'Event not found'));
     }
 
+    // Determine target show if event has multiple shows
+    const shows = await prisma.show.findMany({
+      where: { eventId },
+      include: {
+        eventSeats: {
+          select: { status: true, price: true, holdExpiresAt: true },
+        },
+      },
+      orderBy: { startsAt: 'asc' },
+    });
+
     const now = new Date();
+    const showsWithStats = shows.map((s) => {
+      const total = s.eventSeats.length;
+      const available = s.eventSeats.filter(
+        (es) => es.status === 'AVAILABLE' || (es.status === 'HELD' && es.holdExpiresAt && new Date(es.holdExpiresAt) < now)
+      ).length;
+      const sold = s.eventSeats.filter((es) => es.status === 'SOLD').length;
+      const minPrice = s.eventSeats.length > 0 ? Math.min(...s.eventSeats.map((es) => es.price)) : 0;
+      return {
+        id: s.id,
+        startsAt: s.startsAt,
+        pricing: s.pricing,
+        totalSeats: total,
+        availableSeats: available,
+        soldSeats: sold,
+        soldOut: total > 0 && available === 0,
+        minPrice,
+      };
+    });
+
+    let activeShowId = requestedShowId;
+    if (!activeShowId && shows.length > 0) {
+      // Pick first upcoming show, or earliest show
+      const upcoming = shows.find((s) => new Date(s.startsAt).getTime() > Date.now());
+      activeShowId = upcoming ? upcoming.id : shows[0]!.id;
+    }
+
+    // Fetch seats specifically for this show, or eventSeats where showId is null / any
+    const eventSeats = await prisma.eventSeat.findMany({
+      where: {
+        eventId,
+        ...(activeShowId ? { showId: activeShowId } : {}),
+      },
+      include: {
+        seat: true,
+      },
+      orderBy: [
+        { seat: { section: 'asc' } },
+        { seat: { row: 'asc' } },
+        { seat: { number: 'asc' } },
+      ],
+    });
+
     const currentUserId = req.user?.userId;
 
     const seats = eventSeats.map((es) => {
@@ -232,15 +329,20 @@ eventsRouter.get('/:id/seats', async (req: Request, res: Response, next: NextFun
       };
     });
 
+    const activeShow = showsWithStats.find((s) => s.id === activeShowId);
+
     res.status(200).json({
       eventId,
+      showId: activeShowId || null,
+      show: activeShow || null,
+      shows: showsWithStats,
       event: {
         id: event.id,
         title: event.title,
         description: event.description,
         location: event.location,
         imageUrl: event.imageUrl,
-        startsAt: event.startsAt,
+        startsAt: activeShow ? activeShow.startsAt : event.startsAt,
         capacity: seats.length,
       },
       venue: event.venue,
@@ -259,13 +361,14 @@ eventsRouter.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const eventId = req.params.id as string;
-      const { seatIds } = req.body;
+      const { seatIds, showId } = req.body;
       const userId = req.user!.userId;
 
       const result = await holdSeats({
         eventId,
         seatIds,
         userId,
+        showId,
       });
 
       // Broadcast real-time seat hold to all clients in the room
@@ -273,11 +376,13 @@ eventsRouter.post(
         seatIds: result.heldSeats.map((s) => s.seatId),
         heldByUserId: userId,
         holdExpiresAt: result.holdExpiresAt.toISOString(),
+        showId,
       });
 
       if (result.releasedSeatIds && result.releasedSeatIds.length > 0) {
         broadcastSeatsReleased(eventId, {
           seatIds: result.releasedSeatIds,
+          showId,
         });
       }
 
@@ -287,7 +392,7 @@ eventsRouter.post(
 
       redisConnection.del(CACHE_KEY_PUBLISHED_EVENTS).catch(() => null);
 
-      res.status(200).json(result);
+      res.status(200).json({ ...result, showId });
     } catch (err) {
       next(err);
     }
@@ -302,24 +407,25 @@ eventsRouter.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const eventId = req.params.id as string;
-      const { seatIds } = req.body;
+      const { seatIds, showId } = req.body;
       const userId = req.user!.userId;
 
       const result = await releaseSeats({
         eventId,
         seatIds,
         userId,
+        showId,
       });
 
       // Only announce seats that were actually ours to release; echoing the request would let a
       // client make other people's held or sold seats look free on everyone's map.
       if (result.releasedSeatIds.length > 0) {
-        broadcastSeatsReleased(eventId, { seatIds: result.releasedSeatIds });
+        broadcastSeatsReleased(eventId, { seatIds: result.releasedSeatIds, showId });
       }
 
       redisConnection.del(CACHE_KEY_PUBLISHED_EVENTS).catch(() => null);
 
-      res.status(200).json(result);
+      res.status(200).json({ ...result, showId });
     } catch (err) {
       next(err);
     }

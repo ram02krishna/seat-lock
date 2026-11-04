@@ -147,41 +147,84 @@ export async function createEvent(input: CreateEventInput, organizerId: string) 
   };
   const venueName = input.venueName?.trim() || template.defaultName;
 
-  // Venue, seats, event and its EventSeats are created together so a failure can't leave a
-  // published event with no (or only some) seats.
-  return prisma.$transaction(
-    async (tx) => {
-      // Each event gets its own venue record, so its capacity can differ from every other event.
-      const venue = await tx.venue.create({ data: { name: venueName, layout: plan.layout as Prisma.InputJsonValue } });
-      const seats = await tx.seat.createManyAndReturn({
-        data: plan.seats.map((s) => ({ ...s, venueId: venue.id })),
-        select: { id: true, tier: true },
-      });
-      const event = await tx.event.create({
-        data: {
-          venueId: venue.id,
-          organizerId,
-          title: input.title,
-          description: input.description || null,
-          location: input.location ?? null,
-          imageUrl: input.imageUrl ?? null,
-          startsAt,
-          capacity: seats.length,
-        },
-      });
-      await tx.eventSeat.createMany({
-        data: seats.map((seat) => ({
-          eventId: event.id,
-          seatId: seat.id,
-          price: prices[seat.tier] ?? prices.STANDARD!,
-          status: SeatStatus.AVAILABLE,
-        })),
-      });
-      return { event, seatsCount: seats.length, seatsPerRow: plan.seatsPerRow, tierCounts: plan.tierCounts };
-    },
-    { timeout: 60000 },
-  );
-}
+    const category = input.category || (input.venueType === 'THEATER_DOLBY' ? 'CINEMA' : null);
+    const isCinema = category === 'CINEMA' || input.venueType === 'THEATER_DOLBY';
+
+    // Venue, seats, event and its EventSeats are created together so a failure can't leave a
+    // published event with no (or only some) seats.
+    return prisma.$transaction(
+      async (tx) => {
+        // Each event gets its own venue record, so its capacity can differ from every other event.
+        const venue = await tx.venue.create({ data: { name: venueName, layout: plan.layout as Prisma.InputJsonValue } });
+        const seats = await tx.seat.createManyAndReturn({
+          data: plan.seats.map((s) => ({ ...s, venueId: venue.id })),
+          select: { id: true, tier: true },
+        });
+
+        const showTimings = (input.shows && input.shows.length > 0)
+          ? input.shows
+          : isCinema
+            ? [{ startsAt: input.startsAt, pricing: input.pricing }]
+            : [];
+
+        const totalCapacity = showTimings.length > 0 ? seats.length * showTimings.length : seats.length;
+
+        const event = await tx.event.create({
+          data: {
+            venueId: venue.id,
+            organizerId,
+            title: input.title,
+            description: input.description || null,
+            category,
+            location: input.location ?? null,
+            imageUrl: input.imageUrl ?? null,
+            startsAt,
+            capacity: totalCapacity,
+          },
+        });
+
+        if (showTimings.length > 0) {
+          for (const s of showTimings) {
+            const showTime = new Date(s.startsAt);
+            const showPrices: Record<string, number> = {
+              VIP: s.pricing?.VIP ?? prices.VIP,
+              PREMIUM: s.pricing?.PREMIUM ?? prices.PREMIUM,
+              STANDARD: s.pricing?.STANDARD ?? prices.STANDARD,
+            };
+            const createdShow = await tx.show.create({
+              data: {
+                eventId: event.id,
+                startsAt: showTime,
+                pricing: showPrices,
+                totalSeats: seats.length,
+              },
+            });
+            await tx.eventSeat.createMany({
+              data: seats.map((seat) => ({
+                eventId: event.id,
+                showId: createdShow.id,
+                seatId: seat.id,
+                price: showPrices[seat.tier] ?? showPrices.STANDARD,
+                status: SeatStatus.AVAILABLE,
+              })),
+            });
+          }
+        } else {
+          await tx.eventSeat.createMany({
+            data: seats.map((seat) => ({
+              eventId: event.id,
+              seatId: seat.id,
+              price: prices[seat.tier] ?? prices.STANDARD!,
+              status: SeatStatus.AVAILABLE,
+            })),
+          });
+        }
+
+        return { event, seatsCount: seats.length, seatsPerRow: plan.seatsPerRow, tierCounts: plan.tierCounts };
+      },
+      { timeout: 60000 },
+    );
+  }
 
 // ---- read for the edit form -------------------------------------------------------------------
 
@@ -204,11 +247,17 @@ export async function getEventForEdit(eventId: string, organizerId: string) {
   const sold = state.filter((s) => s.status === SeatStatus.SOLD).length;
   const held = state.filter((s) => isLiveHold(s, now)).length;
 
+  const shows = await prisma.show.findMany({
+    where: { eventId },
+    orderBy: { startsAt: 'asc' },
+  });
+
   return {
     event: {
       id: event!.id,
       title: event!.title,
       description: event!.description,
+      category: event!.category,
       location: event!.location,
       imageUrl: event!.imageUrl,
       startsAt: event!.startsAt,
@@ -217,6 +266,7 @@ export async function getEventForEdit(eventId: string, organizerId: string) {
       venueName: event!.venue.name,
       venueType: layout?.type ?? 'OTHERS',
     },
+    shows,
     seating: {
       capacity: state.length,
       seatsPerRow,
@@ -490,4 +540,196 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
   );
 
   return result;
+}
+
+// ---- delete event -----------------------------------------------------------------------------
+
+export async function deleteEvent(eventId: string, organizerId: string) {
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      include: { venue: true },
+    });
+    assertOwner(event, organizerId);
+
+    // Delete tickets, orders, eventSeats, shows in safe dependency order
+    await tx.ticket.deleteMany({
+      where: {
+        OR: [
+          { order: { eventId } },
+          { eventSeat: { eventId } },
+        ],
+      },
+    });
+    await tx.order.deleteMany({
+      where: { eventId },
+    });
+    await tx.eventSeat.deleteMany({
+      where: { eventId },
+    });
+    await tx.show.deleteMany({
+      where: { eventId },
+    });
+    await tx.event.delete({
+      where: { id: eventId },
+    });
+
+    // Check if the venue is used only by this event; if so, clean up venue & seats
+    const otherEventsCount = await tx.event.count({
+      where: { venueId: event.venueId },
+    });
+    if (otherEventsCount === 0) {
+      await tx.seat.deleteMany({ where: { venueId: event.venueId } });
+      await tx.venue.delete({ where: { id: event.venueId } });
+    }
+
+    return { success: true, message: 'Event deleted successfully' };
+  });
+}
+
+// ---- show management --------------------------------------------------------------------------
+
+export async function createShow(
+  eventId: string,
+  organizerId: string,
+  input: { startsAt: string; pricing?: Record<string, number> },
+) {
+  const startsAt = new Date(input.startsAt);
+  if (startsAt.getTime() <= Date.now()) {
+    throw new AppError(400, 'The show timing must be in the future');
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.event.findUnique({
+      where: { id: eventId },
+      include: { venue: true },
+    });
+    assertOwner(event, organizerId);
+
+    const seats = await tx.seat.findMany({
+      where: { venueId: event.venueId },
+      select: { id: true, tier: true },
+    });
+
+    if (seats.length === 0) {
+      throw new AppError(400, 'Event venue has no seats configured');
+    }
+
+    const template = getVenueTemplate((event.venue.layout as any)?.type);
+    const defaultPrices: Record<string, number> = {
+      VIP: input.pricing?.VIP ?? template.recommendedPricing.VIP,
+      PREMIUM: input.pricing?.PREMIUM ?? template.recommendedPricing.PREMIUM,
+      STANDARD: input.pricing?.STANDARD ?? template.recommendedPricing.STANDARD,
+    };
+
+    const show = await tx.show.create({
+      data: {
+        eventId,
+        startsAt,
+        pricing: input.pricing || defaultPrices,
+        totalSeats: seats.length,
+      },
+    });
+
+    await tx.eventSeat.createMany({
+      data: seats.map((seat) => ({
+        eventId,
+        showId: show.id,
+        seatId: seat.id,
+        price: defaultPrices[seat.tier] ?? defaultPrices.STANDARD!,
+        status: SeatStatus.AVAILABLE,
+      })),
+    });
+
+    // Update event capacity
+    await tx.event.update({
+      where: { id: eventId },
+      data: { capacity: { increment: seats.length } },
+    });
+
+    return show;
+  });
+}
+
+export async function updateShow(
+  eventId: string,
+  showId: string,
+  organizerId: string,
+  input: { startsAt?: string; pricing?: Record<string, number> },
+) {
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.event.findUnique({ where: { id: eventId } });
+    assertOwner(event, organizerId);
+
+    const show = await tx.show.findUnique({ where: { id: showId } });
+    if (!show || show.eventId !== eventId) {
+      throw new AppError(404, 'Show not found');
+    }
+
+    const data: Prisma.ShowUpdateInput = {};
+    if (input.startsAt) {
+      const startsAt = new Date(input.startsAt);
+      if (startsAt.getTime() <= Date.now()) {
+        throw new AppError(400, 'The show timing must be in the future');
+      }
+      data.startsAt = startsAt;
+    }
+
+    if (input.pricing) {
+      data.pricing = input.pricing;
+      for (const [tier, price] of Object.entries(input.pricing)) {
+        if (typeof price === 'number') {
+          await tx.eventSeat.updateMany({
+            where: {
+              showId,
+              status: SeatStatus.AVAILABLE,
+              seat: { tier },
+            },
+            data: { price },
+          });
+        }
+      }
+    }
+
+    const updated = await tx.show.update({
+      where: { id: showId },
+      data,
+    });
+
+    return updated;
+  });
+}
+
+export async function deleteShow(eventId: string, showId: string, organizerId: string) {
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.event.findUnique({ where: { id: eventId } });
+    assertOwner(event, organizerId);
+
+    const show = await tx.show.findUnique({ where: { id: showId } });
+    if (!show || show.eventId !== eventId) {
+      throw new AppError(404, 'Show not found');
+    }
+
+    // Delete tickets and orders associated with this show
+    await tx.ticket.deleteMany({
+      where: { order: { showId } },
+    });
+    await tx.order.deleteMany({
+      where: { showId },
+    });
+    const deletedSeats = await tx.eventSeat.deleteMany({
+      where: { showId },
+    });
+    await tx.show.delete({
+      where: { id: showId },
+    });
+
+    // Adjust event capacity
+    await tx.event.update({
+      where: { id: eventId },
+      data: { capacity: { decrement: deletedSeats.count } },
+    });
+
+    return { success: true, message: 'Show deleted successfully' };
+  });
 }

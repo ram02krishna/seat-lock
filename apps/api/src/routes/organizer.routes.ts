@@ -2,15 +2,15 @@ import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
 import { validateBody } from '../middleware/validate';
-import { CreateVenueSchema, CreateEventSchema, UpdateEventSchema, GenerateSeatsSchema, CreateStaffSchema } from '@repo/shared';
+import { CreateVenueSchema, CreateEventSchema, UpdateEventSchema, GenerateSeatsSchema, CreateStaffSchema, CreateShowSchema, UpdateShowSchema } from '@repo/shared';
 import { requireAuth, requireRole } from '../middleware/auth';
 import { AppError } from '../errors';
 import { Prisma, Role, SeatStatus } from '@prisma/client';
 import { getVenueTemplate, VENUE_TEMPLATES } from '../services/venueTemplates.service';
 import { redisConnection } from '../redis';
-import { broadcastEventUpdated } from '../socket';
+import { broadcastEventUpdated, broadcastEventDeleted } from '../socket';
 import { sendEventUpdatedEmail } from '../services/email.service';
-import { assertOwner, createEvent, getEventForEdit, updateEvent } from '../services/eventManagement.service';
+import { assertOwner, createEvent, getEventForEdit, updateEvent, deleteEvent, createShow, updateShow, deleteShow } from '../services/eventManagement.service';
 import { logger } from '../logger';
 
 export const organizerRouter = Router();
@@ -184,6 +184,77 @@ organizerRouter.put(
       }
 
       res.status(200).json({ ...result, notifiedCustomers: notify?.emails.length ?? 0 });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Delete an event. Only the owner organizer may delete their own event.
+organizerRouter.delete('/events/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const eventId = req.params.id as string;
+    const result = await deleteEvent(eventId, req.user!.userId);
+
+    redisConnection.del('cache:events:published').catch(() => null);
+    broadcastEventDeleted(eventId);
+
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Add a show timing for an event
+organizerRouter.post(
+  '/events/:id/shows',
+  validateBody(CreateShowSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const eventId = req.params.id as string;
+      const show = await createShow(eventId, req.user!.userId, req.body);
+
+      redisConnection.del('cache:events:published').catch(() => null);
+      broadcastEventUpdated(eventId);
+
+      res.status(201).json({ show });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Edit an individual show timing
+organizerRouter.put(
+  '/events/:id/shows/:showId',
+  validateBody(UpdateShowSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id: eventId, showId } = req.params;
+      const show = await updateShow(eventId as string, showId as string, req.user!.userId, req.body);
+
+      redisConnection.del('cache:events:published').catch(() => null);
+      broadcastEventUpdated(eventId as string);
+
+      res.status(200).json({ show });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Remove an individual show timing
+organizerRouter.delete(
+  '/events/:id/shows/:showId',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id: eventId, showId } = req.params;
+      const result = await deleteShow(eventId as string, showId as string, req.user!.userId);
+
+      redisConnection.del('cache:events:published').catch(() => null);
+      broadcastEventUpdated(eventId as string);
+
+      res.status(200).json(result);
     } catch (err) {
       next(err);
     }
@@ -374,6 +445,32 @@ organizerRouter.get('/events/:id/stats', async (req: Request, res: Response, nex
       take: 10,
     });
 
+    // Show breakdown if any
+    const shows = await prisma.show.findMany({
+      where: { eventId },
+      include: { eventSeats: true },
+      orderBy: { startsAt: 'asc' },
+    });
+    const showStats = shows.map((s) => {
+      const sTotal = s.eventSeats.length;
+      const sSold = s.eventSeats.filter((es) => es.status === SeatStatus.SOLD).length;
+      const sHeld = s.eventSeats.filter(isLiveHold).length;
+      const sRevenue = s.eventSeats
+        .filter((es) => es.status === SeatStatus.SOLD)
+        .reduce((sum, es) => sum + es.price, 0);
+      return {
+        id: s.id,
+        startsAt: s.startsAt,
+        pricing: s.pricing,
+        totalSeats: sTotal,
+        soldSeats: sSold,
+        heldSeats: sHeld,
+        availableSeats: sTotal - sSold - sHeld,
+        occupancyRate: sTotal > 0 ? Math.round((sSold / sTotal) * 100) : 0,
+        revenueCents: sRevenue,
+      };
+    });
+
     res.status(200).json({
       event: {
         id: event.id,
@@ -399,6 +496,7 @@ organizerRouter.get('/events/:id/stats', async (req: Request, res: Response, nex
         checkInRate,
       },
       tiers,
+      shows: showStats,
       recentOrders: recentOrders.map((o) => ({
         id: o.id,
         userEmail: o.user.email,
