@@ -85,27 +85,62 @@ async function main() {
     startsAt.setDate(startsAt.getDate() + daysAhead);
     startsAt.setHours(hours, minutes, 0, 0);
 
+    const priceFor = (tier: string) =>
+      template.recommendedPricing[tier as 'VIP' | 'PREMIUM' | 'STANDARD'] || 50000;
+
+    // A cinema is scheduled by its show timings (the event start is its earliest show); every other
+    // event has a single start time.
+    const showStarts: Date[] =
+      type === 'THEATER_DOLBY'
+        ? [0, 3, 6].map((offsetHours) => new Date(startsAt.getTime() + offsetHours * 60 * 60 * 1000))
+        : [];
+
     const event = await prisma.event.create({
       data: {
         venueId: venue.id,
         organizerId: organizer.id,
         title: eventTitle,
         description: eventDesc,
+        category: type === 'THEATER_DOLBY' ? 'CINEMA' : null,
         startsAt,
-        capacity: createdSeats.length,
+        capacity: createdSeats.length * Math.max(1, showStarts.length),
         status: EventStatus.PUBLISHED,
       },
     });
 
-    const eventSeatsData = createdSeats.map((seat) => ({
-      eventId: event.id,
-      seatId: seat.id,
-      price: template.recommendedPricing[seat.tier as 'VIP' | 'PREMIUM' | 'STANDARD'] || 50000,
-      status: SeatStatus.AVAILABLE,
-    }));
-
-    await prisma.eventSeat.createMany({ data: eventSeatsData });
-    console.log(`Created [${type}] venue "${venue.name}" with event "${event.title}" (${createdSeats.length} seats)`);
+    if (showStarts.length > 0) {
+      const pricing = {
+        VIP: priceFor('VIP'),
+        PREMIUM: priceFor('PREMIUM'),
+        STANDARD: priceFor('STANDARD'),
+      };
+      for (const showStart of showStarts) {
+        const show = await prisma.show.create({
+          data: { eventId: event.id, startsAt: showStart, pricing, totalSeats: createdSeats.length },
+        });
+        await prisma.eventSeat.createMany({
+          data: createdSeats.map((seat) => ({
+            eventId: event.id,
+            showId: show.id,
+            seatId: seat.id,
+            price: priceFor(seat.tier),
+            status: SeatStatus.AVAILABLE,
+          })),
+        });
+      }
+    } else {
+      await prisma.eventSeat.createMany({
+        data: createdSeats.map((seat) => ({
+          eventId: event.id,
+          seatId: seat.id,
+          price: priceFor(seat.tier),
+          status: SeatStatus.AVAILABLE,
+        })),
+      });
+    }
+    console.log(
+      `Created [${type}] venue "${venue.name}" with event "${event.title}" (${createdSeats.length} seats${showStarts.length ? `, ${showStarts.length} shows` : ''})`,
+    );
   }
 
   // 1. Dolby Atmos Theater

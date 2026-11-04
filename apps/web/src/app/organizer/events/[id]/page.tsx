@@ -130,7 +130,7 @@ export default function EventAnalyticsPage({ params }: { params: Promise<{ id: s
             <button
               type="button"
               onClick={() => setDeleteOpen(true)}
-              className="btn btn-secondary text-bad hover:bg-bad/10 hover:border-bad/40 btn-sm flex-1 sm:flex-initial inline-flex items-center gap-1.5"
+              className="btn btn-secondary btn-sm flex-1 text-danger sm:flex-initial"
             >
               <Trash2 className="h-3.5 w-3.5" />
               Delete event
@@ -155,13 +155,10 @@ export default function EventAnalyticsPage({ params }: { params: Promise<{ id: s
         {stat('Checked in', <>{checkIn.checkedInCount}<span className="ml-1 text-sm sm:text-base font-normal text-ink-3">/ {checkIn.totalTickets}</span></>, `${checkIn.checkInRate}% entered`, checkIn.checkInRate)}
       </div>
 
-      {/* Show Timings Manager for Cinema Events */}
-      <ShowManager
-        eventId={event.id}
-        eventTitle={event.title}
-        shows={data.shows || []}
-        onUpdated={() => refetch()}
-      />
+      {/* Show timings only exist for cinema events */}
+      {event.venueType === 'THEATER_DOLBY' && (
+        <ShowManager mode="live" eventId={event.id} shows={data.shows || []} onUpdated={() => refetch()} />
+      )}
 
       <section className="space-y-3" aria-labelledby="tiers-h">
         <h2 id="tiers-h" className="font-display text-xl sm:text-2xl font-semibold">By section</h2>

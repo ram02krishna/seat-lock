@@ -31,7 +31,21 @@ export async function holdSeats(params: {
   if (!event || event.status !== 'PUBLISHED') {
     throw new AppError(404, 'Event not found or not open for booking');
   }
-  if (event.startsAt.getTime() <= Date.now()) {
+
+  // A cinema is booked per show: the event's own start is just its earliest show, which may have
+  // passed while later shows are still on sale.
+  const showCount = await prisma.show.count({ where: { eventId } });
+  if (showId) {
+    const show = await prisma.show.findUnique({ where: { id: showId }, select: { eventId: true, startsAt: true } });
+    if (!show || show.eventId !== eventId) {
+      throw new AppError(404, 'Show not found');
+    }
+    if (show.startsAt.getTime() <= Date.now()) {
+      throw new AppError(400, 'This show has already started');
+    }
+  } else if (showCount > 0) {
+    throw new AppError(400, 'Choose a showtime before selecting seats');
+  } else if (event.startsAt.getTime() <= Date.now()) {
     throw new AppError(400, 'This event has already started');
   }
 

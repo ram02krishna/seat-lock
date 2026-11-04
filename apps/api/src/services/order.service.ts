@@ -233,8 +233,13 @@ export async function createAndConfirmBooking(params: {
     if (show.startsAt.getTime() <= Date.now()) {
       throw new AppError(400, 'This show has already started');
     }
-  } else if (event.startsAt.getTime() <= Date.now()) {
-    throw new AppError(400, 'This event has already started');
+  } else {
+    if ((await prisma.show.count({ where: { eventId } })) > 0) {
+      throw new AppError(400, 'Choose a showtime before booking');
+    }
+    if (event.startsAt.getTime() <= Date.now()) {
+      throw new AppError(400, 'This event has already started');
+    }
   }
 
   // 2. Verify seats are currently HELD by this user

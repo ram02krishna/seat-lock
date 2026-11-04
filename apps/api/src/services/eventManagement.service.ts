@@ -1,5 +1,5 @@
 import { Prisma, SeatStatus } from '@prisma/client';
-import { MAX_SEATS_PER_EVENT, PRICING_TIERS } from '@repo/shared';
+import { MAX_SEATS_PER_EVENT, PRICING_TIERS, isCinemaVenueType } from '@repo/shared';
 import type { CreateEventInput, UpdateEventInput } from '@repo/shared';
 import { prisma } from '../db';
 import { AppError } from '../errors';
@@ -16,6 +16,7 @@ type Tx = Prisma.TransactionClient;
 
 export interface SeatState {
   id: string; // EventSeat id
+  showId?: string | null;
   status: SeatStatus;
   holdExpiresAt: Date | null;
   price: number;
@@ -34,6 +35,11 @@ export function assertOwner<T extends { organizerId: string | null }>(
   }
 }
 
+/** An event is a cinema when it was created as one or its layout is the cinema template. */
+export function isCinemaEvent(event: { category: string | null }, layout: any): boolean {
+  return event.category?.toUpperCase() === 'CINEMA' || isCinemaVenueType(layout?.type);
+}
+
 const isLiveHold = (s: { status: SeatStatus; holdExpiresAt: Date | null }, now: number) =>
   s.status === SeatStatus.HELD && !!s.holdExpiresAt && s.holdExpiresAt.getTime() > now;
 
@@ -44,6 +50,7 @@ async function loadSeatState(tx: Pick<Tx, 'eventSeat'>, eventId: string): Promis
     where: { eventId },
     select: {
       id: true,
+      showId: true,
       status: true,
       holdExpiresAt: true,
       price: true,
@@ -51,6 +58,33 @@ async function loadSeatState(tx: Pick<Tx, 'eventSeat'>, eventId: string): Promis
     },
   });
   return rows;
+}
+
+/**
+ * A cinema stores one EventSeat per physical seat *per show*. Capacity, layout growth and shrinking
+ * are about physical seats, so collapse the rows into one entry per seat. A seat counts as sold or
+ * held when it is sold or held in ANY show, which keeps it from being removed under a customer.
+ * `id` of a collapsed entry is the Seat id; `eventSeatIds` lists every row behind it.
+ */
+export function collapseByPhysicalSeat(
+  rows: SeatState[],
+  now: number,
+): Array<SeatState & { eventSeatIds: string[] }> {
+  const bySeat = new Map<string, SeatState & { eventSeatIds: string[] }>();
+  for (const r of rows) {
+    const existing = bySeat.get(r.seat.id);
+    if (!existing) {
+      bySeat.set(r.seat.id, { ...r, id: r.seat.id, eventSeatIds: [r.id] });
+      continue;
+    }
+    existing.eventSeatIds.push(r.id);
+    if (r.status === SeatStatus.SOLD) existing.status = SeatStatus.SOLD;
+    else if (existing.status !== SeatStatus.SOLD && isLiveHold(r, now)) {
+      existing.status = SeatStatus.HELD;
+      existing.holdExpiresAt = r.holdExpiresAt;
+    }
+  }
+  return Array.from(bySeat.values());
 }
 
 /** The price new seats in a tier should get when the organizer didn't send one. */
@@ -124,15 +158,77 @@ async function ensurePrivateVenue(tx: Tx, event: { id: string; venueId: string }
   return clone.id;
 }
 
+// ---- show helpers -----------------------------------------------------------------------------
+
+const MAX_SHOWS_PER_EVENT = 60;
+
+type PriceMap = Record<string, number>;
+
+/** Fill any missing tier so every show always stores a complete price list. */
+function completePricing(partial: Partial<PriceMap> | null | undefined, fallback: PriceMap): PriceMap {
+  return {
+    VIP: partial?.VIP ?? fallback.VIP!,
+    PREMIUM: partial?.PREMIUM ?? fallback.PREMIUM!,
+    STANDARD: partial?.STANDARD ?? fallback.STANDARD!,
+  };
+}
+
+function assertFutureShow(startsAt: Date, label = 'The show timing') {
+  if (Number.isNaN(startsAt.getTime())) throw new AppError(400, `${label} is not a valid date`);
+  if (startsAt.getTime() <= Date.now()) throw new AppError(400, `${label} must be in the future`);
+}
+
+/** The event's own start is always its earliest show, and its capacity is the number of seat rows. */
+async function syncEventAggregates(tx: Tx, eventId: string) {
+  const [first, capacity] = await Promise.all([
+    tx.show.findFirst({ where: { eventId }, orderBy: { startsAt: 'asc' }, select: { startsAt: true } }),
+    tx.eventSeat.count({ where: { eventId } }),
+  ]);
+  await tx.event.update({
+    where: { id: eventId },
+    data: { capacity, ...(first ? { startsAt: first.startsAt } : {}) },
+  });
+}
+
+async function lockEvent(tx: Tx, eventId: string) {
+  const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "Event" WHERE id = ${eventId} FOR UPDATE`;
+  if (locked.length === 0) throw new AppError(404, 'Event not found');
+}
+
+/**
+ * Cinema events created before show timings existed have seats with no show. The first time a show
+ * is added they are moved under a show at the event's original time, so tickets already sold keep
+ * working and the new show is simply the second one.
+ */
+async function adoptLegacySeats(tx: Tx, event: { id: string; startsAt: Date }, fallbackPrices: PriceMap) {
+  const legacy = await tx.eventSeat.findMany({
+    where: { eventId: event.id, showId: null },
+    select: { id: true, price: true, seat: { select: { tier: true } } },
+  });
+  if (legacy.length === 0) return;
+
+  const pricing: PriceMap = { ...fallbackPrices };
+  const seen = new Set<string>();
+  for (const row of legacy) {
+    if (!seen.has(row.seat.tier)) {
+      pricing[row.seat.tier] = row.price;
+      seen.add(row.seat.tier);
+    }
+  }
+  const show = await tx.show.create({
+    data: { eventId: event.id, startsAt: event.startsAt, pricing, totalSeats: legacy.length },
+  });
+  await tx.eventSeat.updateMany({ where: { eventId: event.id, showId: null }, data: { showId: show.id } });
+  await tx.order.updateMany({ where: { eventId: event.id, showId: null }, data: { showId: show.id } });
+}
+
 // ---- create -----------------------------------------------------------------------------------
 
 export async function createEvent(input: CreateEventInput, organizerId: string) {
-  const startsAt = new Date(input.startsAt);
-  if (startsAt.getTime() <= Date.now()) {
-    throw new AppError(400, 'The event start time must be in the future');
-  }
-
   const template = getVenueTemplate(input.venueType);
+  const category = input.category || (isCinemaVenueType(input.venueType) ? 'CINEMA' : null);
+  const isCinema = category?.toUpperCase() === 'CINEMA' || isCinemaVenueType(input.venueType);
+
   const plan = buildSeatPlan({
     venueType: input.venueType,
     totalSeats: input.totalSeats,
@@ -140,91 +236,91 @@ export async function createEvent(input: CreateEventInput, organizerId: string) 
     vipSeats: input.vipSeats,
     premiumSeats: input.premiumSeats,
   });
-  const prices: Record<string, number> = {
+  const basePrices: PriceMap = {
     VIP: input.pricing?.VIP ?? template.recommendedPricing.VIP,
     PREMIUM: input.pricing?.PREMIUM ?? template.recommendedPricing.PREMIUM,
     STANDARD: input.pricing?.STANDARD ?? template.recommendedPricing.STANDARD,
   };
   const venueName = input.venueName?.trim() || template.defaultName;
 
-    const category = input.category || (input.venueType === 'THEATER_DOLBY' ? 'CINEMA' : null);
-    const isCinema = category === 'CINEMA' || input.venueType === 'THEATER_DOLBY';
+  // A cinema's schedule is its show list; every other event has a single start time.
+  let showTimings: Array<{ startsAt: Date; pricing: PriceMap }> = [];
+  let startsAt: Date;
+  if (isCinema) {
+    const requested = input.shows?.length ? input.shows : [{ startsAt: input.startsAt!, pricing: input.pricing }];
+    showTimings = requested
+      .map((s) => ({ startsAt: new Date(s.startsAt), pricing: completePricing(s.pricing, basePrices) }))
+      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+    showTimings.forEach((s, i) => assertFutureShow(s.startsAt, `Show timing #${i + 1}`));
+    for (let i = 1; i < showTimings.length; i++) {
+      if (showTimings[i]!.startsAt.getTime() === showTimings[i - 1]!.startsAt.getTime()) {
+        throw new AppError(400, 'Two show timings are scheduled at the same time');
+      }
+    }
+    startsAt = showTimings[0]!.startsAt;
+  } else {
+    startsAt = new Date(input.startsAt!);
+    if (startsAt.getTime() <= Date.now()) {
+      throw new AppError(400, 'The event start time must be in the future');
+    }
+  }
 
-    // Venue, seats, event and its EventSeats are created together so a failure can't leave a
-    // published event with no (or only some) seats.
-    return prisma.$transaction(
-      async (tx) => {
-        // Each event gets its own venue record, so its capacity can differ from every other event.
-        const venue = await tx.venue.create({ data: { name: venueName, layout: plan.layout as Prisma.InputJsonValue } });
-        const seats = await tx.seat.createManyAndReturn({
-          data: plan.seats.map((s) => ({ ...s, venueId: venue.id })),
-          select: { id: true, tier: true },
-        });
+  // Venue, seats, event and its EventSeats are created together so a failure can't leave a
+  // published event with no (or only some) seats.
+  return prisma.$transaction(
+    async (tx) => {
+      // Each event gets its own venue record, so its capacity can differ from every other event.
+      const venue = await tx.venue.create({ data: { name: venueName, layout: plan.layout as Prisma.InputJsonValue } });
+      const seats = await tx.seat.createManyAndReturn({
+        data: plan.seats.map((s) => ({ ...s, venueId: venue.id })),
+        select: { id: true, tier: true },
+      });
 
-        const showTimings = (input.shows && input.shows.length > 0)
-          ? input.shows
-          : isCinema
-            ? [{ startsAt: input.startsAt, pricing: input.pricing }]
-            : [];
+      const event = await tx.event.create({
+        data: {
+          venueId: venue.id,
+          organizerId,
+          title: input.title,
+          description: input.description || null,
+          category,
+          location: input.location ?? null,
+          imageUrl: input.imageUrl ?? null,
+          startsAt,
+          capacity: seats.length * Math.max(1, showTimings.length),
+        },
+      });
 
-        const totalCapacity = showTimings.length > 0 ? seats.length * showTimings.length : seats.length;
-
-        const event = await tx.event.create({
-          data: {
-            venueId: venue.id,
-            organizerId,
-            title: input.title,
-            description: input.description || null,
-            category,
-            location: input.location ?? null,
-            imageUrl: input.imageUrl ?? null,
-            startsAt,
-            capacity: totalCapacity,
-          },
-        });
-
-        if (showTimings.length > 0) {
-          for (const s of showTimings) {
-            const showTime = new Date(s.startsAt);
-            const showPrices: Record<string, number> = {
-              VIP: s.pricing?.VIP ?? prices.VIP,
-              PREMIUM: s.pricing?.PREMIUM ?? prices.PREMIUM,
-              STANDARD: s.pricing?.STANDARD ?? prices.STANDARD,
-            };
-            const createdShow = await tx.show.create({
-              data: {
-                eventId: event.id,
-                startsAt: showTime,
-                pricing: showPrices,
-                totalSeats: seats.length,
-              },
-            });
-            await tx.eventSeat.createMany({
-              data: seats.map((seat) => ({
-                eventId: event.id,
-                showId: createdShow.id,
-                seatId: seat.id,
-                price: showPrices[seat.tier] ?? showPrices.STANDARD,
-                status: SeatStatus.AVAILABLE,
-              })),
-            });
-          }
-        } else {
+      if (isCinema) {
+        for (const timing of showTimings) {
+          const createdShow = await tx.show.create({
+            data: { eventId: event.id, startsAt: timing.startsAt, pricing: timing.pricing, totalSeats: seats.length },
+          });
           await tx.eventSeat.createMany({
             data: seats.map((seat) => ({
               eventId: event.id,
+              showId: createdShow.id,
               seatId: seat.id,
-              price: prices[seat.tier] ?? prices.STANDARD!,
+              price: timing.pricing[seat.tier] ?? timing.pricing.STANDARD!,
               status: SeatStatus.AVAILABLE,
             })),
           });
         }
+      } else {
+        await tx.eventSeat.createMany({
+          data: seats.map((seat) => ({
+            eventId: event.id,
+            seatId: seat.id,
+            price: basePrices[seat.tier] ?? basePrices.STANDARD!,
+            status: SeatStatus.AVAILABLE,
+          })),
+        });
+      }
 
-        return { event, seatsCount: seats.length, seatsPerRow: plan.seatsPerRow, tierCounts: plan.tierCounts };
-      },
-      { timeout: 60000 },
-    );
-  }
+      return { event, seatsCount: seats.length, seatsPerRow: plan.seatsPerRow, tierCounts: plan.tierCounts };
+    },
+    { timeout: 60000 },
+  );
+}
 
 // ---- read for the edit form -------------------------------------------------------------------
 
@@ -233,52 +329,82 @@ export async function getEventForEdit(eventId: string, organizerId: string) {
   assertOwner(event, organizerId);
 
   const now = Date.now();
-  const state = await loadSeatState(prisma, eventId);
+  const layout = event.venue.layout as any;
+  const isCinema = isCinemaEvent(event, layout);
+  const rawState = await loadSeatState(prisma, eventId);
+  // Capacity, tiers and layout are about physical seats; a cinema repeats them once per show.
+  const state = isCinema ? collapseByPhysicalSeat(rawState, now) : rawState;
   const tiers = tierSummary(state, now);
-  const layout = event!.venue.layout as any;
 
   const rows = new Map<string, number>();
   for (const s of state) rows.set(s.seat.row, (rows.get(s.seat.row) ?? 0) + 1);
   const seatsPerRow = layout?.config?.seatsPerRow ?? Math.max(0, ...Array.from(rows.values()));
 
+  const shows = isCinema
+    ? await prisma.show.findMany({ where: { eventId }, orderBy: { startsAt: 'asc' } })
+    : [];
+  const hasShows = shows.length > 0;
+
   const pricing: Record<string, number | null> = {};
-  for (const tier of PRICING_TIERS) pricing[tier] = currentTierPrice(state, tier) ?? null;
+  for (const tier of PRICING_TIERS) pricing[tier] = hasShows ? null : (currentTierPrice(rawState, tier) ?? null);
 
-  const sold = state.filter((s) => s.status === SeatStatus.SOLD).length;
-  const held = state.filter((s) => isLiveHold(s, now)).length;
+  const soldTickets = rawState.filter((s) => s.status === SeatStatus.SOLD).length;
+  const heldNow = rawState.filter((s) => isLiveHold(s, now)).length;
+  const protectedSeats = state.filter((s) => isProtected(s, now)).length;
 
-  const shows = await prisma.show.findMany({
-    where: { eventId },
-    orderBy: { startsAt: 'asc' },
+  const showStats = shows.map((show) => {
+    const own = rawState.filter((r) => r.showId === show.id);
+    const sold = own.filter((r) => r.status === SeatStatus.SOLD);
+    const held = own.filter((r) => isLiveHold(r, now)).length;
+    return {
+      id: show.id,
+      startsAt: show.startsAt,
+      pricing: show.pricing,
+      totalSeats: own.length,
+      soldSeats: sold.length,
+      heldSeats: held,
+      availableSeats: own.length - sold.length - held,
+      soldOut: own.length > 0 && own.length - sold.length - held === 0,
+      revenueCents: sold.reduce((sum, r) => sum + r.price, 0),
+    };
   });
+
+  const lastShowStart = hasShows ? Math.max(...shows.map((s) => s.startsAt.getTime())) : null;
+  const eventOver = lastShowStart !== null ? lastShowStart <= now : event.startsAt.getTime() <= now;
 
   return {
     event: {
-      id: event!.id,
-      title: event!.title,
-      description: event!.description,
-      category: event!.category,
-      location: event!.location,
-      imageUrl: event!.imageUrl,
-      startsAt: event!.startsAt,
-      status: event!.status,
-      updatedAt: event!.updatedAt,
-      venueName: event!.venue.name,
+      id: event.id,
+      title: event.title,
+      description: event.description,
+      category: event.category,
+      location: event.location,
+      imageUrl: event.imageUrl,
+      startsAt: event.startsAt,
+      status: event.status,
+      updatedAt: event.updatedAt,
+      venueName: event.venue.name,
       venueType: layout?.type ?? 'OTHERS',
     },
-    shows,
+    /** Cinema with show timings: its date and prices are edited per show. */
+    isCinema: hasShows,
+    /** Any cinema can manage show timings, including older ones that have none yet. */
+    canManageShows: isCinema,
+    shows: showStats,
     seating: {
+      // Physical seats (per show for a cinema)
       capacity: state.length,
       seatsPerRow,
-      sold,
-      held,
-      available: state.length - sold - held,
-      minCapacity: sold + held,
+      sold: soldTickets,
+      held: heldNow,
+      available: rawState.length - soldTickets - heldNow,
+      showCount: shows.length,
+      minCapacity: protectedSeats,
       maxCapacity: MAX_SEATS_PER_EVENT,
       tiers,
     },
     pricing,
-    editable: event!.startsAt.getTime() > now && event!.status !== 'CANCELLED' && event!.status !== 'COMPLETED',
+    editable: !eventOver && event.status !== 'CANCELLED' && event.status !== 'COMPLETED',
   };
 }
 
@@ -311,19 +437,32 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
   const result = await prisma.$transaction(
     async (tx) => {
       // Serialize edits of the same event, then check ownership against the locked row.
-      const locked = await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "Event" WHERE id = ${eventId} FOR UPDATE`;
-      if (locked.length === 0) throw new AppError(404, 'Event not found');
+      await lockEvent(tx, eventId);
 
       const event = await tx.event.findUnique({ where: { id: eventId }, include: { venue: true } });
       assertOwner(event, organizerId);
-      const ev = event!;
+      const ev = event;
 
       const now = Date.now();
+      const isCinema = isCinemaEvent(ev, ev.venue.layout);
+      const shows = isCinema ? await tx.show.findMany({ where: { eventId }, orderBy: { startsAt: 'asc' } }) : [];
+      const useShows = isCinema && shows.length > 0;
+
+      // A cinema that already has shows is scheduled and priced per show. (Older cinemas with no
+      // shows yet keep editing their single start time and prices until a first show is added.)
+      if (useShows && (input.startsAt !== undefined || input.pricing !== undefined)) {
+        throw new AppError(
+          400,
+          'A cinema’s dates and ticket prices belong to its show timings. Edit them on the show instead.',
+        );
+      }
+
       if (ev.status === 'CANCELLED' || ev.status === 'COMPLETED') {
         throw new AppError(409, `A ${ev.status.toLowerCase()} event can no longer be edited`);
       }
-      if (ev.startsAt.getTime() <= now) {
-        throw new AppError(409, 'This event has already started and can no longer be edited');
+      const lastStart = useShows ? Math.max(...shows.map((s) => s.startsAt.getTime())) : ev.startsAt.getTime();
+      if (lastStart <= now) {
+        throw new AppError(409, useShows ? 'Every show has already started, so this event can no longer be edited' : 'This event has already started and can no longer be edited');
       }
       if (input.expectedUpdatedAt && new Date(input.expectedUpdatedAt).getTime() !== ev.updatedAt.getTime()) {
         throw new AppError(409, 'This event was changed somewhere else. Reload to see the latest version, then try again.', {
@@ -336,9 +475,10 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
         throw new AppError(400, 'The event start time must be in the future');
       }
 
-      let state = await loadSeatState(tx, eventId);
-      const sold = state.filter((s) => s.status === SeatStatus.SOLD).length;
-      const held = state.filter((s) => isLiveHold(s, now)).length;
+      let rawState = await loadSeatState(tx, eventId);
+      let state: SeatState[] = isCinema ? collapseByPhysicalSeat(rawState, now) : rawState;
+      const sold = rawState.filter((s) => s.status === SeatStatus.SOLD).length;
+      const held = rawState.filter((s) => isLiveHold(s, now)).length;
       const currentCapacity = state.length;
       const targetCapacity = input.totalSeats ?? currentCapacity;
 
@@ -374,7 +514,10 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
 
       if (targetCapacity !== currentCapacity || (venueChanged && input.venueName)) {
         venueId = await ensurePrivateVenue(tx, { id: ev.id, venueId: ev.venueId });
-        if (venueId !== ev.venueId) state = await loadSeatState(tx, eventId); // seat ids were remapped
+        if (venueId !== ev.venueId) {
+          rawState = await loadSeatState(tx, eventId); // seat ids were remapped
+          state = isCinema ? collapseByPhysicalSeat(rawState, now) : rawState;
+        }
       }
 
       let layout: any = venueId === ev.venueId ? ev.venue.layout : (await tx.venue.findUniqueOrThrow({ where: { id: venueId } })).layout;
@@ -387,11 +530,23 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
           data: planned.map((p) => ({ ...p, venueId })),
           select: { id: true, tier: true },
         });
-        const tierPrice = priceOverride[fallbackTier] ?? currentTierPrice(state, fallbackTier);
-        if (tierPrice === undefined) throw new AppError(500, 'Could not work out a price for the new seats');
-        await tx.eventSeat.createMany({
-          data: created.map((c) => ({ eventId, seatId: c.id, price: tierPrice, status: SeatStatus.AVAILABLE })),
-        });
+        if (useShows) {
+          // New physical seats appear in every show, at that show's own price for the tier.
+          const rows = shows.flatMap((show) => {
+            const showPrices = (show.pricing ?? {}) as Partial<PriceMap>;
+            const fallback = currentTierPrice(rawState.filter((r) => r.showId === show.id), fallbackTier);
+            const price = showPrices[fallbackTier] ?? fallback;
+            if (price === undefined) throw new AppError(500, 'Could not work out a price for the new seats');
+            return created.map((c) => ({ eventId, showId: show.id, seatId: c.id, price, status: SeatStatus.AVAILABLE }));
+          });
+          await tx.eventSeat.createMany({ data: rows });
+        } else {
+          const tierPrice = priceOverride[fallbackTier] ?? currentTierPrice(rawState, fallbackTier);
+          if (tierPrice === undefined) throw new AppError(500, 'Could not work out a price for the new seats');
+          await tx.eventSeat.createMany({
+            data: created.map((c) => ({ eventId, seatId: c.id, price: tierPrice, status: SeatStatus.AVAILABLE })),
+          });
+        }
         seatsAdded = created.length;
       } else if (targetCapacity < currentCapacity) {
         const remove = currentCapacity - targetCapacity;
@@ -399,27 +554,52 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
           state.map((s) => ({ ...s.seat, id: s.id, protected: isProtected(s, now) })),
           remove,
         );
-        const seatIdByEventSeat = new Map(state.map((s) => [s.id, s.seat.id]));
         // Guarded delete: only seats that are still free at this instant. If a customer grabbed
         // one a moment ago the counts differ and the whole edit rolls back.
-        const deleted = await tx.$executeRaw`
-          DELETE FROM "EventSeat"
-          WHERE "eventId" = ${eventId}
-            AND id IN (${Prisma.join(ids)})
-            AND (
-              status = 'AVAILABLE'::"SeatStatus"
-              OR (status = 'HELD'::"SeatStatus" AND "holdExpiresAt" < NOW())
-            )
-        `;
-        if (deleted !== ids.length) {
+        let deleted: number;
+        let expected: number;
+        let physicalSeatIds: string[];
+        if (isCinema) {
+          physicalSeatIds = ids; // collapsed ids are Seat ids
+          const byId = new Map(state.map((s) => [s.id, (s as SeatState & { eventSeatIds: string[] }).eventSeatIds.length]));
+          expected = ids.reduce((sum, id) => sum + (byId.get(id) ?? 0), 0);
+          deleted = await tx.$executeRaw`
+            DELETE FROM "EventSeat"
+            WHERE "eventId" = ${eventId}
+              AND "seatId" IN (${Prisma.join(ids)})
+              AND (
+                status = 'AVAILABLE'::"SeatStatus"
+                OR (status = 'HELD'::"SeatStatus" AND "holdExpiresAt" < NOW())
+              )
+          `;
+        } else {
+          const seatIdByEventSeat = new Map(state.map((s) => [s.id, s.seat.id]));
+          physicalSeatIds = ids.map((id) => seatIdByEventSeat.get(id)!);
+          expected = ids.length;
+          deleted = await tx.$executeRaw`
+            DELETE FROM "EventSeat"
+            WHERE "eventId" = ${eventId}
+              AND id IN (${Prisma.join(ids)})
+              AND (
+                status = 'AVAILABLE'::"SeatStatus"
+                OR (status = 'HELD'::"SeatStatus" AND "holdExpiresAt" < NOW())
+              )
+          `;
+        }
+        if (deleted !== expected) {
           throw new AppError(409, 'Some seats were just booked or held by customers. Please try again.');
         }
-        await tx.seat.deleteMany({ where: { venueId, id: { in: ids.map((id) => seatIdByEventSeat.get(id)!) } } });
+        await tx.seat.deleteMany({ where: { venueId, id: { in: physicalSeatIds } } });
         seatsRemoved = ids.length;
       }
 
       // ---- seats changed: refresh layout metadata, capacity counter and venue name ----
-      const finalState = seatsAdded || seatsRemoved ? await loadSeatState(tx, eventId) : state;
+      let finalRaw = rawState;
+      let finalState = state;
+      if (seatsAdded || seatsRemoved) {
+        finalRaw = await loadSeatState(tx, eventId);
+        finalState = isCinema ? collapseByPhysicalSeat(finalRaw, now) : finalRaw;
+      }
       if (finalState.length > MAX_SEATS_PER_EVENT) {
         throw new AppError(400, `An event can have at most ${MAX_SEATS_PER_EVENT} seats`);
       }
@@ -435,8 +615,14 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
           },
         });
       }
+      if (seatsAdded || seatsRemoved) {
+        // Each show keeps its own seat count in step with the venue.
+        for (const show of shows) {
+          await tx.show.update({ where: { id: show.id }, data: { totalSeats: finalState.length } });
+        }
+      }
 
-      // ---- pricing: only seats that are free right now ----
+      // ---- pricing: only seats that are free right now (non-cinema; cinema prices live on shows) ----
       const pricingReport: UpdateEventResult['summary']['pricing'] = [];
       for (const tier of PRICING_TIERS) {
         const price = input.pricing?.[tier];
@@ -478,7 +664,8 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
           ...(input.location !== undefined ? { location: input.location } : {}),
           ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
           ...(newStart ? { startsAt: newStart } : {}),
-          capacity: finalState.length,
+          // Always the number of seat rows (all shows included for a cinema)
+          capacity: finalRaw.length,
         },
       });
 
@@ -493,8 +680,8 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
       if (input.description !== undefined && (input.description ?? null) !== (ev.description ?? null)) changes.push('Description updated');
       if (input.imageUrl !== undefined && (input.imageUrl ?? null) !== (ev.imageUrl ?? null)) changes.push('Image updated');
       changes.push(...customerFacing);
-      if (seatsAdded) changes.push(`${seatsAdded} seat${seatsAdded === 1 ? '' : 's'} added (capacity ${finalState.length})`);
-      if (seatsRemoved) changes.push(`${seatsRemoved} seat${seatsRemoved === 1 ? '' : 's'} removed (capacity ${finalState.length})`);
+      if (seatsAdded) changes.push(`${seatsAdded} seat${seatsAdded === 1 ? '' : 's'} added${useShows ? ' to every show' : ''} (capacity ${finalState.length})`);
+      if (seatsRemoved) changes.push(`${seatsRemoved} seat${seatsRemoved === 1 ? '' : 's'} removed${useShows ? ' from every show' : ''} (capacity ${finalState.length})`);
       for (const p of pricingReport) if (p.updatedSeats > 0) changes.push(`${p.tier} price updated on ${p.updatedSeats} open seat${p.updatedSeats === 1 ? '' : 's'}`);
 
       let notify: UpdateEventResult['notify'] = null;
@@ -513,8 +700,8 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
         };
       }
 
-      const soldNow = finalState.filter((s) => s.status === SeatStatus.SOLD).length;
-      const heldNow = finalState.filter((s) => isLiveHold(s, now)).length;
+      const soldNow = finalRaw.filter((s) => s.status === SeatStatus.SOLD).length;
+      const heldNow = finalRaw.filter((s) => isLiveHold(s, now)).length;
       return {
         event: {
           id: updatedEvent.id,
@@ -527,7 +714,7 @@ export async function updateEvent(eventId: string, organizerId: string, input: U
           capacity: finalState.length,
           sold: soldNow,
           held: heldNow,
-          available: finalState.length - soldNow - heldNow,
+          available: finalRaw.length - soldNow - heldNow,
           seatsAdded,
           seatsRemoved,
           pricing: pricingReport,
@@ -589,147 +776,213 @@ export async function deleteEvent(eventId: string, organizerId: string) {
 
 // ---- show management --------------------------------------------------------------------------
 
+/** Shared guard: the event must be the organizer's own, a cinema, and still open for changes. */
+async function loadCinemaForShowChange(tx: Tx, eventId: string, organizerId: string) {
+  await lockEvent(tx, eventId);
+  const event = await tx.event.findUnique({ where: { id: eventId }, include: { venue: true } });
+  assertOwner(event, organizerId);
+  if (!isCinemaEvent(event, event.venue.layout)) {
+    throw new AppError(400, 'Show timings are only available for cinema events');
+  }
+  if (event.status === 'CANCELLED' || event.status === 'COMPLETED') {
+    throw new AppError(409, `A ${event.status.toLowerCase()} event can no longer be edited`);
+  }
+  return event;
+}
+
 export async function createShow(
   eventId: string,
   organizerId: string,
-  input: { startsAt: string; pricing?: Record<string, number> },
+  input: { startsAt: string; pricing?: Partial<PriceMap> },
 ) {
   const startsAt = new Date(input.startsAt);
-  if (startsAt.getTime() <= Date.now()) {
-    throw new AppError(400, 'The show timing must be in the future');
-  }
+  assertFutureShow(startsAt);
 
-  return prisma.$transaction(async (tx) => {
-    const event = await tx.event.findUnique({
-      where: { id: eventId },
-      include: { venue: true },
-    });
-    assertOwner(event, organizerId);
+  return prisma.$transaction(
+    async (tx) => {
+      const event = await loadCinemaForShowChange(tx, eventId, organizerId);
 
-    const seats = await tx.seat.findMany({
-      where: { venueId: event.venueId },
-      select: { id: true, tier: true },
-    });
+      const template = getVenueTemplate((event.venue.layout as any)?.type);
+      const recommended = template.recommendedPricing as PriceMap;
 
-    if (seats.length === 0) {
-      throw new AppError(400, 'Event venue has no seats configured');
-    }
+      // New shows inherit the latest show's prices unless the organizer sets their own.
+      const latest = await tx.show.findFirst({ where: { eventId }, orderBy: { createdAt: 'desc' } });
+      const inherited = completePricing((latest?.pricing ?? null) as Partial<PriceMap> | null, recommended);
 
-    const template = getVenueTemplate((event.venue.layout as any)?.type);
-    const defaultPrices: Record<string, number> = {
-      VIP: input.pricing?.VIP ?? template.recommendedPricing.VIP,
-      PREMIUM: input.pricing?.PREMIUM ?? template.recommendedPricing.PREMIUM,
-      STANDARD: input.pricing?.STANDARD ?? template.recommendedPricing.STANDARD,
-    };
+      await adoptLegacySeats(tx, event, inherited);
 
-    const show = await tx.show.create({
-      data: {
-        eventId,
-        startsAt,
-        pricing: input.pricing || defaultPrices,
-        totalSeats: seats.length,
-      },
-    });
+      const existing = await tx.show.findMany({ where: { eventId }, select: { startsAt: true } });
+      if (existing.length >= MAX_SHOWS_PER_EVENT) {
+        throw new AppError(409, `A cinema event can have at most ${MAX_SHOWS_PER_EVENT} show timings`);
+      }
+      if (existing.some((s) => s.startsAt.getTime() === startsAt.getTime())) {
+        throw new AppError(409, 'A show is already scheduled at that date and time');
+      }
 
-    await tx.eventSeat.createMany({
-      data: seats.map((seat) => ({
-        eventId,
-        showId: show.id,
-        seatId: seat.id,
-        price: defaultPrices[seat.tier] ?? defaultPrices.STANDARD!,
-        status: SeatStatus.AVAILABLE,
-      })),
-    });
+      // The physical seats of this event (not the whole venue: older data could share venues).
+      let seats = await tx.seat.findMany({
+        where: { eventSeats: { some: { eventId } } },
+        select: { id: true, tier: true },
+      });
+      if (seats.length === 0) {
+        seats = await tx.seat.findMany({ where: { venueId: event.venueId }, select: { id: true, tier: true } });
+      }
+      if (seats.length === 0) throw new AppError(400, 'Event venue has no seats configured');
 
-    // Update event capacity
-    await tx.event.update({
-      where: { id: eventId },
-      data: { capacity: { increment: seats.length } },
-    });
+      const pricing = completePricing(input.pricing, inherited);
+      const show = await tx.show.create({
+        data: { eventId, startsAt, pricing, totalSeats: seats.length },
+      });
+      await tx.eventSeat.createMany({
+        data: seats.map((seat) => ({
+          eventId,
+          showId: show.id,
+          seatId: seat.id,
+          price: pricing[seat.tier] ?? pricing.STANDARD!,
+          status: SeatStatus.AVAILABLE,
+        })),
+      });
 
-    return show;
-  });
+      await syncEventAggregates(tx, eventId);
+      return show;
+    },
+    { timeout: 30000 },
+  );
 }
 
 export async function updateShow(
   eventId: string,
   showId: string,
   organizerId: string,
-  input: { startsAt?: string; pricing?: Record<string, number> },
+  input: { startsAt?: string; pricing?: Partial<PriceMap>; confirm?: boolean },
 ) {
-  return prisma.$transaction(async (tx) => {
-    const event = await tx.event.findUnique({ where: { id: eventId } });
-    assertOwner(event, organizerId);
+  return prisma.$transaction(
+    async (tx) => {
+      const event = await loadCinemaForShowChange(tx, eventId, organizerId);
 
-    const show = await tx.show.findUnique({ where: { id: showId } });
-    if (!show || show.eventId !== eventId) {
-      throw new AppError(404, 'Show not found');
-    }
-
-    const data: Prisma.ShowUpdateInput = {};
-    if (input.startsAt) {
-      const startsAt = new Date(input.startsAt);
-      if (startsAt.getTime() <= Date.now()) {
-        throw new AppError(400, 'The show timing must be in the future');
+      const show = await tx.show.findUnique({ where: { id: showId } });
+      if (!show || show.eventId !== eventId) {
+        throw new AppError(404, 'Show not found');
       }
-      data.startsAt = startsAt;
-    }
+      if (show.startsAt.getTime() <= Date.now()) {
+        throw new AppError(409, 'This show has already started and can no longer be edited');
+      }
 
-    if (input.pricing) {
-      data.pricing = input.pricing;
-      for (const [tier, price] of Object.entries(input.pricing)) {
-        if (typeof price === 'number') {
+      const soldRows = await tx.order.findMany({
+        where: { showId, status: 'CONFIRMED' },
+        select: { user: { select: { email: true } } },
+      });
+      const soldCount = await tx.eventSeat.count({ where: { showId, status: SeatStatus.SOLD } });
+
+      const data: Prisma.ShowUpdateInput = {};
+      let newStart: Date | null = null;
+      if (input.startsAt) {
+        newStart = new Date(input.startsAt);
+        assertFutureShow(newStart);
+        if (newStart.getTime() !== show.startsAt.getTime()) {
+          const clash = await tx.show.findFirst({
+            where: { eventId, startsAt: newStart, id: { not: showId } },
+            select: { id: true },
+          });
+          if (clash) throw new AppError(409, 'Another show is already scheduled at that date and time');
+          if (soldCount > 0 && !input.confirm) {
+            throw new AppError(
+              409,
+              `${soldCount} ticket${soldCount === 1 ? ' has' : 's have'} already been sold for this show. Confirm to move it; ticket holders will be emailed.`,
+              { code: 'CONFIRMATION_REQUIRED', impact: { soldSeats: soldCount } },
+            );
+          }
+          data.startsAt = newStart;
+        } else {
+          newStart = null;
+        }
+      }
+
+      if (input.pricing) {
+        const recommended = getVenueTemplate((event.venue.layout as any)?.type).recommendedPricing as PriceMap;
+        const current = completePricing((show.pricing ?? null) as Partial<PriceMap> | null, recommended);
+        data.pricing = completePricing(input.pricing, current);
+        // Only seats nobody has bought or is holding right now take the new price.
+        for (const tier of PRICING_TIERS) {
+          const price = input.pricing[tier];
+          if (price === undefined) continue;
           await tx.eventSeat.updateMany({
             where: {
               showId,
-              status: SeatStatus.AVAILABLE,
               seat: { tier },
+              OR: [
+                { status: SeatStatus.AVAILABLE },
+                { status: SeatStatus.HELD, holdExpiresAt: { lt: new Date() } },
+              ],
             },
             data: { price },
           });
         }
       }
-    }
 
-    const updated = await tx.show.update({
-      where: { id: showId },
-      data,
-    });
+      const updated = await tx.show.update({ where: { id: showId }, data });
+      await syncEventAggregates(tx, eventId);
 
-    return updated;
-  });
+      const notify =
+        newStart && soldCount > 0
+          ? {
+              title: event.title,
+              startsAt: newStart,
+              venueName: event.venue.name,
+              location: event.location,
+              changes: ['Showtime changed'],
+              emails: Array.from(new Set(soldRows.map((o) => o.user.email))),
+            }
+          : null;
+
+      return { show: updated, notify };
+    },
+    { timeout: 30000 },
+  );
 }
 
 export async function deleteShow(eventId: string, showId: string, organizerId: string) {
-  return prisma.$transaction(async (tx) => {
-    const event = await tx.event.findUnique({ where: { id: eventId } });
-    assertOwner(event, organizerId);
+  return prisma.$transaction(
+    async (tx) => {
+      await loadCinemaForShowChange(tx, eventId, organizerId);
 
-    const show = await tx.show.findUnique({ where: { id: showId } });
-    if (!show || show.eventId !== eventId) {
-      throw new AppError(404, 'Show not found');
-    }
+      const show = await tx.show.findUnique({ where: { id: showId } });
+      if (!show || show.eventId !== eventId) {
+        throw new AppError(404, 'Show not found');
+      }
 
-    // Delete tickets and orders associated with this show
-    await tx.ticket.deleteMany({
-      where: { order: { showId } },
-    });
-    await tx.order.deleteMany({
-      where: { showId },
-    });
-    const deletedSeats = await tx.eventSeat.deleteMany({
-      where: { showId },
-    });
-    await tx.show.delete({
-      where: { id: showId },
-    });
+      // Never wipe out tickets customers have paid for.
+      const sold = await tx.eventSeat.count({ where: { showId, status: SeatStatus.SOLD } });
+      if (sold > 0) {
+        throw new AppError(
+          409,
+          `${sold} ticket${sold === 1 ? ' has' : 's have'} already been sold for this show, so it can't be deleted.`,
+          { code: 'SHOW_HAS_SALES', soldSeats: sold },
+        );
+      }
+      const liveHolds = await tx.eventSeat.count({
+        where: { showId, status: SeatStatus.HELD, holdExpiresAt: { gt: new Date() } },
+      });
+      if (liveHolds > 0) {
+        throw new AppError(409, 'Customers are holding seats for this show right now. Try again in a few minutes.', {
+          code: 'SHOW_HAS_HOLDS',
+        });
+      }
+      const remaining = await tx.show.count({ where: { eventId, id: { not: showId } } });
+      if (remaining === 0) {
+        throw new AppError(409, 'A cinema event needs at least one show timing. Delete the event instead.', {
+          code: 'LAST_SHOW',
+        });
+      }
 
-    // Adjust event capacity
-    await tx.event.update({
-      where: { id: eventId },
-      data: { capacity: { decrement: deletedSeats.count } },
-    });
+      // Only unfinished orders can remain on a show with no sold seats.
+      await tx.order.deleteMany({ where: { showId, status: { not: 'CONFIRMED' } } });
+      await tx.eventSeat.deleteMany({ where: { showId } });
+      await tx.show.delete({ where: { id: showId } });
+      await syncEventAggregates(tx, eventId);
 
-    return { success: true, message: 'Show deleted successfully' };
-  });
+      return { success: true, message: 'Show deleted successfully' };
+    },
+    { timeout: 30000 },
+  );
 }

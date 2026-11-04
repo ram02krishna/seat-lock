@@ -8,7 +8,9 @@ import { apiFetch } from '@/lib/api';
 import { formatINR, formatEventDateTime } from '@/lib/format';
 import { VenueBadge, VENUE_LABELS, VenueTypeKey } from '@/components/venue-badge';
 import { MAX_SEATS_PER_EVENT, MAX_SEATS_PER_ROW, optionalText, parseCount, previewSeating } from '@/lib/seating';
+import { localNowForInput, rupeesToPaise, sortShows } from '@/lib/shows';
 import { DeleteEventModal } from '@/components/DeleteEventModal';
+import { ShowManager, type ShowTimingItem } from '@/components/ShowManager';
 
 const PRESETS: Record<VenueTypeKey, { venue: string; vip: string; premium: string; standard: string; blurb: string }> = {
   THEATER_DOLBY: { venue: 'Dolby Atmos Cinema', vip: '1200', premium: '700', standard: '400', blurb: 'Curved screen, recliners up front, centre aisle.' },
@@ -58,19 +60,6 @@ interface StaffMember {
   createdAt: string;
 }
 
-/** `<input type="datetime-local">` wants local time, not UTC */
-function localNowForInput() {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
-}
-
-function rupeesToPaise(value: string, label: string): number {
-  const n = Number(value);
-  if (!value.trim() || !Number.isFinite(n) || n <= 0) throw new Error(`Enter a price above zero for ${label}.`);
-  return Math.round(n * 100);
-}
-
 function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (
     <div className="card p-3 sm:p-5 min-w-0 overflow-hidden">
@@ -79,13 +68,6 @@ function Stat({ label, value, hint }: { label: string; value: React.ReactNode; h
       {hint && <p className="mt-1 text-[11px] sm:text-xs text-ink-3 truncate">{hint}</p>}
     </div>
   );
-}
-
-interface ExtraShowInput {
-  startsAt: string;
-  vip: string;
-  premium: string;
-  standard: string;
 }
 
 function CreateEventForm({ onDone }: { onDone: () => void }) {
@@ -104,9 +86,10 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
   const [vip, setVip] = useState(PRESETS.THEATER_DOLBY.vip);
   const [premium, setPremium] = useState(PRESETS.THEATER_DOLBY.premium);
   const [standard, setStandard] = useState(PRESETS.THEATER_DOLBY.standard);
-  const [extraShows, setExtraShows] = useState<ExtraShowInput[]>([]);
+  const [shows, setShows] = useState<ShowTimingItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  const isCinema = venueType === 'THEATER_DOLBY';
   const seating = previewSeating(totalSeats, seatsPerRow, vipSeats, premiumSeats);
 
   function pickType(type: VenueTypeKey) {
@@ -122,41 +105,31 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
     mutationFn: async () => {
       if (title.trim().length < 2) throw new Error('Give the event a title.');
       if (!venueName.trim()) throw new Error('Enter a venue name.');
-      if (!startsAt) throw new Error('Pick a start date and time.');
       if (seating.error || !seating.preview) throw new Error(seating.error || 'Check the seating numbers.');
-      const when = new Date(startsAt);
-      if (when.getTime() <= Date.now()) throw new Error('The start time needs to be in the future.');
 
-      for (let i = 0; i < extraShows.length; i++) {
-        const s = extraShows[i];
-        if (!s.startsAt) throw new Error(`Select a date and time for showtime #${i + 2}.`);
-        const stDate = new Date(s.startsAt);
-        if (Number.isNaN(stDate.getTime()) || stDate.getTime() <= Date.now()) {
-          throw new Error(`Showtime #${i + 2} must be in the future.`);
+      let startsAtIso: string | undefined;
+      let pricing: { VIP: number; PREMIUM: number; STANDARD: number } | undefined;
+      let showsPayload: Array<{ startsAt: string; pricing?: ShowTimingItem['pricing'] }> | undefined;
+
+      if (isCinema) {
+        // A cinema's schedule and prices come from its showtimes; there is no separate start time.
+        if (shows.length === 0) throw new Error('Add at least one showtime.');
+        const now = Date.now();
+        for (const s of shows) {
+          if (new Date(s.startsAt).getTime() <= now) throw new Error('Every showtime needs to be in the future.');
         }
+        showsPayload = sortShows(shows).map((s) => ({ startsAt: s.startsAt, pricing: s.pricing }));
+      } else {
+        if (!startsAt) throw new Error('Pick a start date and time.');
+        const when = new Date(startsAt);
+        if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) throw new Error('The start time needs to be in the future.');
+        startsAtIso = when.toISOString();
+        pricing = {
+          VIP: rupeesToPaise(vip, 'VIP'),
+          PREMIUM: rupeesToPaise(premium, 'Premium'),
+          STANDARD: rupeesToPaise(standard, 'Standard'),
+        };
       }
-
-      const pricing = {
-        VIP: rupeesToPaise(vip, 'VIP'),
-        PREMIUM: rupeesToPaise(premium, 'Premium'),
-        STANDARD: rupeesToPaise(standard, 'Standard'),
-      };
-
-      const showsPayload = venueType === 'THEATER_DOLBY'
-        ? [
-            { startsAt: when.toISOString(), pricing },
-            ...extraShows
-              .filter((t) => t.startsAt.trim().length > 0)
-              .map((t) => ({
-                startsAt: new Date(t.startsAt).toISOString(),
-                pricing: {
-                  VIP: rupeesToPaise(t.vip || vip, 'VIP'),
-                  PREMIUM: rupeesToPaise(t.premium || premium, 'Premium'),
-                  STANDARD: rupeesToPaise(t.standard || standard, 'Standard'),
-                },
-              })),
-          ]
-        : undefined;
 
       return apiFetch('/api/organizer/events', {
         method: 'POST',
@@ -165,7 +138,7 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
           venueType,
           title: title.trim(),
           description: description.trim() || undefined,
-          startsAt: when.toISOString(),
+          startsAt: startsAtIso,
           location: optionalText(location),
           imageUrl: optionalText(imageUrl),
           pricing,
@@ -244,137 +217,30 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
           <label className="field-label">Venue name</label>
           <input value={venueName} onChange={(e) => setVenueName(e.target.value)} className="field" />
         </div>
-        <div>
-          <label className="field-label">Starts</label>
-          <input type="datetime-local" min={localNowForInput()} value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className="field" />
-        </div>
-        <div>
+        {!isCinema && (
+          <div>
+            <label className="field-label">Starts</label>
+            <input type="datetime-local" min={localNowForInput()} value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className="field" />
+          </div>
+        )}
+        <div className={isCinema ? 'md:col-span-2' : undefined}>
           <label className="field-label">
             Description <span className="font-normal text-ink-3">(optional)</span>
           </label>
           <input value={description} onChange={(e) => setDescription(e.target.value)} className="field" />
         </div>
-
-        {venueType === 'THEATER_DOLBY' && (
-          <div className="col-span-full rounded-lg border border-line bg-sunken/40 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <p className="text-sm font-semibold text-ink">
-                  Additional Cinema Show Timings <span className="font-normal text-ink-3">(optional)</span>
-                </p>
-                <p className="text-xs sm:text-[13px] text-ink-3">
-                  Add more showtimes for this movie across the same or multiple dates.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  setExtraShows((prev) => [
-                    ...prev,
-                    {
-                      startsAt: '',
-                      vip: vip || PRESETS.THEATER_DOLBY.vip,
-                      premium: premium || PRESETS.THEATER_DOLBY.premium,
-                      standard: standard || PRESETS.THEATER_DOLBY.standard,
-                    },
-                  ])
-                }
-                className="btn btn-secondary btn-xs inline-flex items-center gap-1.5"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Showtime
-              </button>
-            </div>
-            {extraShows.map((st, idx) => (
-              <div
-                key={idx}
-                className="rounded-lg border border-line bg-surface p-3.5 space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-ink">
-                    Showtime #{idx + 2}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setExtraShows((prev) => prev.filter((_, i) => i !== idx))}
-                    className="p-1 text-ink-3 hover:text-bad rounded transition-colors inline-flex items-center gap-1 text-xs"
-                    title="Remove showtime"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Remove</span>
-                  </button>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-xs font-medium text-ink-2 mb-1">
-                      Show Date &amp; Time *
-                    </label>
-                    <input
-                      type="datetime-local"
-                      min={localNowForInput()}
-                      value={st.startsAt}
-                      onChange={(e) => {
-                        const next = [...extraShows];
-                        next[idx] = { ...next[idx], startsAt: e.target.value };
-                        setExtraShows(next);
-                      }}
-                      className="field !py-1.5 text-sm w-full"
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <label className="block text-xs font-medium text-ink-2 mb-1">VIP (₹)</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={st.vip}
-                        onChange={(e) => {
-                          const next = [...extraShows];
-                          next[idx] = { ...next[idx], vip: e.target.value };
-                          setExtraShows(next);
-                        }}
-                        className="field !py-1.5 text-sm w-full tabular-nums"
-                        placeholder={vip}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-ink-2 mb-1">Premium (₹)</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={st.premium}
-                        onChange={(e) => {
-                          const next = [...extraShows];
-                          next[idx] = { ...next[idx], premium: e.target.value };
-                          setExtraShows(next);
-                        }}
-                        className="field !py-1.5 text-sm w-full tabular-nums"
-                        placeholder={premium}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-ink-2 mb-1">Standard (₹)</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={st.standard}
-                        onChange={(e) => {
-                          const next = [...extraShows];
-                          next[idx] = { ...next[idx], standard: e.target.value };
-                          setExtraShows(next);
-                        }}
-                        className="field !py-1.5 text-sm w-full tabular-nums"
-                        placeholder={standard}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
+
+      {isCinema && (
+        <ShowManager
+          mode="draft"
+          shows={shows}
+          onChange={setShows}
+          variant="inline"
+          title={`Show timings (${shows.length})`}
+          subtitle="A cinema is scheduled by its showtimes: add one for every screening, each with its own ticket prices."
+        />
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <div>
@@ -416,20 +282,22 @@ function CreateEventForm({ onDone }: { onDone: () => void }) {
         ) : (
           seating.preview && (
             <p className="text-xs text-ink-3 tabular-nums">
-              The seat map will have {totalSeats} seats in {seating.preview.rows} rows: {seating.preview.vip} VIP · {seating.preview.premium} Premium · {seating.preview.standard} Standard. Leave a field blank to let us choose.
+              The seat map will have {totalSeats} seats{isCinema ? ' per show' : ''} in {seating.preview.rows} rows: {seating.preview.vip} VIP · {seating.preview.premium} Premium · {seating.preview.standard} Standard. Leave a field blank to let us choose.
             </p>
           )
         )}
       </fieldset>
 
-      <div>
-        <p className="field-label">Ticket prices</p>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {priceInput('VIP', vip, setVip)}
-          {priceInput('Premium', premium, setPremium)}
-          {priceInput('Standard', standard, setStandard)}
+      {!isCinema && (
+        <div>
+          <p className="field-label">Ticket prices</p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {priceInput('VIP', vip, setVip)}
+            {priceInput('Premium', premium, setPremium)}
+            {priceInput('Standard', standard, setStandard)}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onDone} className="btn btn-secondary">
@@ -680,7 +548,7 @@ export default function OrganizerDashboardPage() {
                   <div className="flex items-center gap-1.5 flex-wrap md:justify-end">
                     <Link
                       href={`/organizer/events/${ev.id}/edit`}
-                      className="btn btn-secondary btn-xs text-blue-600 dark:text-blue-400 border-blue-500/30 hover:border-blue-500/60 hover:bg-blue-500/10"
+                      className="btn btn-secondary btn-xs"
                       title="Edit event"
                     >
                       <Pencil className="h-3 w-3" />
@@ -688,7 +556,7 @@ export default function OrganizerDashboardPage() {
                     </Link>
                     <Link
                       href={`/events/${ev.id}`}
-                      className="btn btn-secondary btn-xs text-ink-2 hover:text-ink hover:border-line-strong"
+                      className="btn btn-secondary btn-xs"
                       title="View public page"
                     >
                       <ExternalLink className="h-3 w-3 text-ink-3" />
@@ -697,7 +565,7 @@ export default function OrganizerDashboardPage() {
                     <button
                       type="button"
                       onClick={() => setEventToDelete(ev)}
-                      className="btn btn-secondary btn-xs text-red-600 dark:text-red-400 border-red-500/30 hover:border-red-500/60 hover:bg-red-500/10"
+                      className="btn btn-secondary btn-xs text-danger"
                       title="Delete event"
                     >
                       <Trash2 className="h-3 w-3" />

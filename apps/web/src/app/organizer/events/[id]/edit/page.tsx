@@ -10,7 +10,8 @@ import { formatINR } from '@/lib/format';
 import { VenueBadge } from '@/components/venue-badge';
 import { MAX_SEATS_PER_EVENT, optionalText } from '@/lib/seating';
 import { DeleteEventModal } from '@/components/DeleteEventModal';
-import { ShowManager, ShowTimingItem } from '@/components/ShowManager';
+import { ShowManager, type ShowTimingItem } from '@/components/ShowManager';
+import { toLocalInput } from '@/lib/shows';
 
 type Tier = 'VIP' | 'PREMIUM' | 'STANDARD';
 const TIERS: Tier[] = ['VIP', 'PREMIUM', 'STANDARD'];
@@ -29,6 +30,10 @@ interface EditData {
     venueName: string;
     venueType: string;
   };
+  /** Cinema events are scheduled by their shows, not by a single start time or price list. */
+  isCinema: boolean;
+  /** True for every cinema, including older ones that have no show timings yet. */
+  canManageShows: boolean;
   shows?: ShowTimingItem[];
   seating: {
     capacity: number;
@@ -36,6 +41,7 @@ interface EditData {
     sold: number;
     held: number;
     available: number;
+    showCount: number;
     minCapacity: number;
     maxCapacity: number;
     tiers: Array<{ tier: string; total: number; sold: number; held: number; available: number }>;
@@ -57,13 +63,6 @@ interface SaveResult {
     pricing: Array<{ tier: string; price: number; updatedSeats: number; keptSoldSeats: number; keptHeldSeats: number }>;
   };
   notifiedCustomers: number;
-}
-
-/** `<input type="datetime-local">` wants local time, not UTC */
-function toLocalInput(iso: string) {
-  const d = new Date(iso);
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
 }
 
 function paiseToRupees(paise: number | null | undefined) {
@@ -95,7 +94,9 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
     PREMIUM: '',
     STANDARD: '',
   });
-  const [loadedVersion, setLoadedVersion] = useState<string | null>(null);
+  // The form is filled from the server once, and again only on request (after a save or "Reload
+  // latest"). Show changes also bump the event's updatedAt, and must not wipe unsaved edits.
+  const [formReady, setFormReady] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -103,9 +104,8 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
   const [stale, setStale] = useState(false);
   const [result, setResult] = useState<SaveResult | null>(null);
 
-  // (Re)fill the form whenever a new version of the event arrives from the server
   useEffect(() => {
-    if (!data || data.event.updatedAt === loadedVersion) return;
+    if (!data || formReady) return;
     setForm({
       title: data.event.title,
       description: data.event.description ?? '',
@@ -118,12 +118,12 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
       PREMIUM: paiseToRupees(data.pricing.PREMIUM),
       STANDARD: paiseToRupees(data.pricing.STANDARD),
     });
-    setLoadedVersion(data.event.updatedAt);
+    setFormReady(true);
     setReviewing(false);
     setAcknowledged(false);
     setNeedsConfirm(false);
     setStale(false);
-  }, [data, loadedVersion]);
+  }, [data, formReady]);
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -145,7 +145,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
       payload.description = form.description.trim() || null;
       labels.push('Description updated');
     }
-    if (form.startsAt && form.startsAt !== toLocalInput(e.startsAt)) {
+    if (!data.isCinema && form.startsAt && form.startsAt !== toLocalInput(e.startsAt)) {
       const when = new Date(form.startsAt);
       if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) err = err ?? 'The start time needs to be in the future.';
       else {
@@ -179,7 +179,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
     }
 
     const pricing: Record<string, number> = {};
-    for (const tier of TIERS) {
+    for (const tier of data.isCinema ? [] : TIERS) {
       const current = data.pricing[tier];
       if (current == null) continue; // tier has no seats
       const raw = form[tier];
@@ -218,7 +218,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
       setFormError(null);
       queryClient.invalidateQueries({ queryKey: ['organizer'] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
-      refetch();
+      refetch().then(() => setFormReady(false));
     },
     onError: (e: unknown) => {
       const err = e as ApiError;
@@ -337,7 +337,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
               className="btn btn-secondary btn-sm"
               onClick={async () => {
                 await refetch();
-                setLoadedVersion(null);
+                setFormReady(false);
               }}
             >
               <RefreshCw className="h-3.5 w-3.5" /> Reload latest
@@ -347,18 +347,40 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
       )}
 
       <section className="card grid grid-cols-2 gap-3 p-4 text-center sm:grid-cols-4" aria-label="Current seating">
-        {[
-          ['Capacity', seating.capacity],
-          ['Sold', seating.sold],
-          ['Held now', seating.held],
-          ['Open', seating.available],
-        ].map(([label, value]) => (
+        {(data.isCinema
+          ? [
+              ['Seats per show', seating.capacity],
+              ['Shows', seating.showCount],
+              ['Tickets sold', seating.sold],
+              ['Open seats', seating.available],
+            ]
+          : [
+              ['Capacity', seating.capacity],
+              ['Sold', seating.sold],
+              ['Held now', seating.held],
+              ['Open', seating.available],
+            ]
+        ).map(([label, value]) => (
           <div key={label as string}>
             <p className="eyebrow text-[10px]">{label}</p>
             <p className="text-2xl font-semibold tabular-nums">{value}</p>
           </div>
         ))}
       </section>
+
+      {data.canManageShows && (
+        <ShowManager
+          mode="live"
+          eventId={eventId}
+          shows={data.shows ?? []}
+          disabled={!data.editable}
+          title={`Show timings (${(data.shows ?? []).length})`}
+          subtitle="A cinema is scheduled by its showtimes, each with its own ticket prices. Showtime changes are saved as soon as you confirm them."
+          onUpdated={() => {
+            refetch();
+          }}
+        />
+      )}
 
       <form
         onSubmit={(e) => {
@@ -377,10 +399,12 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
               <label className="field-label" htmlFor="title">Title</label>
               <input id="title" value={form.title} onChange={set('title')} maxLength={150} className={field} />
             </div>
-            <div>
-              <label className="field-label" htmlFor="startsAt">Starts</label>
-              <input id="startsAt" type="datetime-local" value={form.startsAt} onChange={set('startsAt')} className={field} />
-            </div>
+            {!data.isCinema && (
+              <div>
+                <label className="field-label" htmlFor="startsAt">Starts</label>
+                <input id="startsAt" type="datetime-local" value={form.startsAt} onChange={set('startsAt')} className={field} />
+              </div>
+            )}
             <div>
               <label className="field-label" htmlFor="venueName">Venue name</label>
               <input id="venueName" value={form.venueName} onChange={set('venueName')} maxLength={150} className={field} />
@@ -396,29 +420,6 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
             <textarea id="description" value={form.description} onChange={set('description')} maxLength={5000} rows={3} className={field} />
           </div>
 
-          {data.event.venueType === 'THEATER_DOLBY' && (
-            <ShowManager
-              eventId={eventId}
-              eventTitle={data.event.title}
-              shows={data.shows || []}
-              defaultPrices={{
-                VIP: data.pricing.VIP ?? undefined,
-                PREMIUM: data.pricing.PREMIUM ?? undefined,
-                STANDARD: data.pricing.STANDARD ?? undefined,
-              }}
-              title="Additional Cinema Show Timings"
-              optionalBadge
-              subtitle="Add more showtimes for this movie across the same or multiple dates."
-              buttonLabel="Add Showtime"
-              compactContainer
-              onUpdated={() => {
-                refetch();
-                queryClient.invalidateQueries({ queryKey: ['organizer'] });
-                queryClient.invalidateQueries({ queryKey: ['events'] });
-              }}
-            />
-          )}
-
           <div>
             <label className="field-label" htmlFor="imageUrl">Image URL</label>
             <input id="imageUrl" type="url" value={form.imageUrl} onChange={set('imageUrl')} placeholder="https://…" className={field} />
@@ -429,7 +430,9 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
           </div>
 
           <div>
-            <label className="field-label" htmlFor="totalSeats">Total seats</label>
+            <label className="field-label" htmlFor="totalSeats">
+              {data.isCinema ? 'Seats per show' : 'Total seats'}
+            </label>
             <input
               id="totalSeats"
               type="number"
@@ -442,18 +445,21 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
               className={`${field} max-w-[200px] tabular-nums`}
             />
             <p className="mt-1.5 text-xs text-ink-3">
+              {data.isCinema && 'The same seat map is used by every showtime, so seats are added to or removed from all of them. '}
               Extra seats are added behind the last row ({seating.seatsPerRow} per row). Reducing capacity only removes open seats from the back;
               {seating.minCapacity > 0 ? ` it can’t go below ${seating.minCapacity} while seats are sold or held.` : ' sold or held seats are never removed.'}
             </p>
           </div>
 
-          <div>
-            <p className="field-label">Ticket prices</p>
-            <div className="grid gap-4 sm:grid-cols-3">{TIERS.map(priceInput)}</div>
-            <p className="mt-1.5 text-xs text-ink-3">
-              New prices apply to open seats. Seats already sold, or held by a customer at this moment, keep their current price.
-            </p>
-          </div>
+          {!data.isCinema && (
+            <div>
+              <p className="field-label">Ticket prices</p>
+              <div className="grid gap-4 sm:grid-cols-3">{TIERS.map(priceInput)}</div>
+              <p className="mt-1.5 text-xs text-ink-3">
+                New prices apply to open seats. Seats already sold, or held by a customer at this moment, keep their current price.
+              </p>
+            </div>
+          )}
         </fieldset>
 
         {reviewing ? (
@@ -503,7 +509,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
       </form>
 
       {/* Danger Zone: Event Deletion */}
-      <section className="card border-bad/30 bg-bad/5 p-5 sm:p-6 space-y-3">
+      <section className="card space-y-3 border-danger/30 bg-danger-soft/40 p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="font-display font-semibold text-base text-ink">Delete this event</h3>
@@ -514,7 +520,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
           <button
             type="button"
             onClick={() => setDeleteOpen(true)}
-            className="btn bg-bad hover:bg-bad/90 text-white font-semibold btn-sm inline-flex items-center gap-1.5 self-start sm:self-auto"
+            className="btn btn-danger btn-sm self-start sm:self-auto"
           >
             <Trash2 className="h-4 w-4" />
             Delete Event

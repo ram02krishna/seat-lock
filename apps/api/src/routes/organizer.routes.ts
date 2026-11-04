@@ -231,12 +231,25 @@ organizerRouter.put(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id: eventId, showId } = req.params;
-      const show = await updateShow(eventId as string, showId as string, req.user!.userId, req.body);
+      const { show, notify } = await updateShow(eventId as string, showId as string, req.user!.userId, req.body);
 
       redisConnection.del('cache:events:published').catch(() => null);
       broadcastEventUpdated(eventId as string);
 
-      res.status(200).json({ show });
+      if (notify) {
+        for (const toEmail of notify.emails) {
+          sendEventUpdatedEmail({
+            toEmail,
+            eventTitle: notify.title,
+            startsAt: notify.startsAt,
+            venueName: notify.venueName,
+            location: notify.location,
+            changes: notify.changes,
+          }).catch((err) => logger.error(err, 'Failed to send showtime update email'));
+        }
+      }
+
+      res.status(200).json({ show, notifiedCustomers: notify?.emails.length ?? 0 });
     } catch (err) {
       next(err);
     }
