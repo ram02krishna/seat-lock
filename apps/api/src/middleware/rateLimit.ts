@@ -8,7 +8,7 @@ interface Bucket {
 
 /**
  * Small fixed-window limiter, keyed by client IP + route. In-memory, so it is per-instance,
- * which is fine for a single API process and still blunts credential stuffing and code guessing.
+ * which is fine for a single API process and still blunts credential stuffing(Makes automated attempts to log in using stolen username/password combinations harder) and code guessing.
  */
 export function rateLimit(options: { windowMs: number; max: number; message?: string }) {
   const buckets = new Map<string, Bucket>();
