@@ -7,13 +7,13 @@ interface Bucket {
 }
 
 /**
- * Small fixed-window limiter, keyed by client IP + route. In-memory, so it is per-instance,
- * which is fine for a single API process and still blunts credential stuffing(Makes automated attempts to log in using stolen username/password combinations harder) and code guessing.
+ * Limits requests per client IP and route using an in-memory fixed window.
+ * Each API process has its own limits; this still helps slow automated login attempts and code guessing.
  */
 export function rateLimit(options: { windowMs: number; max: number; message?: string }) {
   const buckets = new Map<string, Bucket>();
 
-  // Keep the map from growing forever
+  // Remove expired entries so the map stays bounded.
   setInterval(() => {
     const now = Date.now();
     for (const [key, bucket] of buckets) {

@@ -36,7 +36,7 @@ function generateOtp(): string {
 
 const MAX_OTP_ATTEMPTS = 5;
 
-// Valid bcrypt hash of a random string, only used to equalise login timing for unknown emails
+// Use this hash to keep login timing consistent when an email address is unknown.
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
 
 function codesMatch(a: string, b: string): boolean {
@@ -46,8 +46,8 @@ function codesMatch(a: string, b: string): boolean {
 }
 
 /**
- * Count a wrong guess against a code. After MAX_OTP_ATTEMPTS the code is destroyed, so a
- * 6-digit code can't be brute-forced inside its 10 minute lifetime.
+ * Count incorrect guesses and discard the code after MAX_OTP_ATTEMPTS.
+ * This limits how many times a six-digit code can be guessed before it expires.
  */
 async function registerFailedAttempt(codeKey: string): Promise<void> {
   const attemptsKey = `${codeKey}:attempts`;

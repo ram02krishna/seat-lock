@@ -3,9 +3,9 @@ import { redisConnection } from '../redis';
 import { logger } from '../logger';
 
 export interface HoldExpiryData {
-  eventId: string;    // Identifies the event
-  seatIds: string[];  // Identifies the seats associated with the hold
-  userId: string;     // Identifies the user who placed the hold
+  eventId: string;    // Event containing the held seats
+  seatIds: string[];  // Seats whose hold is expiring
+  userId: string;     // User who placed the hold
 }
 
 // For example, if User A holds seats A10 and A11 at Event E1, the job receives those identifiers in its data.
