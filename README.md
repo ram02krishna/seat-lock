@@ -221,30 +221,49 @@ pnpm install
 The API generates Prisma Client during installation. If you change the Prisma schema later, regenerate it with `pnpm --filter api prisma:generate`.
 
 ### 2. Environment Variables
-Copy `.env.example` to `.env` in the root and in `apps/api`:
+Copy `.env.example` to `.env` in the project root:
 ```bash
 cp .env.example .env
-cp apps/api/.env.example apps/api/.env
 ```
 
-Ensure your `DATABASE_URL` and `REDIS_URL` are reachable:
+Configure your `DATABASE_URL` and `REDIS_URL`:
+
+**Option A — Running Without Docker:**
 ```env
+# Local native PostgreSQL (port 5432) or free cloud PostgreSQL (e.g. Neon / Supabase):
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/seat_lock?schema=public"
+
+# Built-in in-memory mock Redis (zero external dependencies or Docker needed!):
+REDIS_URL="mock"
+
+JWT_SECRET="supersecretdevkey1234567890_min32chars"
+```
+
+**Option B — Running With Docker Infrastructure:**
+```env
+# Port 5433 mapped by docker compose:
+DATABASE_URL="postgresql://postgres:postgres@localhost:5433/seat_lock?schema=public"
 REDIS_URL="redis://localhost:6379"
 JWT_SECRET="supersecretdevkey1234567890_min32chars"
 ```
 
-### 3. Database Migration & Seed
-Run Prisma migrations and populate the seed data (Grand Symphony Hall, 112 seats across VIP, Premium, and Standard tiers, plus sample events):
+### 3. Database Schema Push & Seed
+Push the Prisma schema to your database and populate the seed data (Grand Symphony Hall, 112 seats across VIP, Premium, and Standard tiers, plus sample events):
 ```bash
-pnpm db:migrate   # or: pnpm db:push
-pnpm seed         # or: pnpm db:seed
+pnpm db:push      # Push Prisma schema directly to your database (or: pnpm db:migrate)
+pnpm db:seed      # Populate seed data and default organizer account (or: pnpm seed)
 ```
 
 ### 4. Run Development Servers
 ```bash
 # Starts API (port 4000) and Web (port 3000) concurrently:
 pnpm dev
+
+# Or start only the Backend API server:
+pnpm dev:api      # or: pnpm dev:backend
+
+# Or start only the Frontend Web app:
+pnpm dev:web
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 

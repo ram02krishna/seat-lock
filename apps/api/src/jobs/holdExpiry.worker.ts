@@ -78,5 +78,9 @@ export function startHoldExpiryWorker(): Worker {
     logger.error({ err, jobId: job?.id }, 'Hold expiry job failed');
   });
 
+  worker.on('error', (err) => {
+    logger.warn({ msg: err.message }, 'BullMQ worker error (periodic cleanup will handle hold expiries)');
+  });
+
   return worker;
 }
