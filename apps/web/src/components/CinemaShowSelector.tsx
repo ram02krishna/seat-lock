@@ -1,0 +1,253 @@
+'use client';
+
+import { useMemo, useState, useEffect } from 'react';
+import { Film, CheckCircle2 } from 'lucide-react';
+import { formatINR } from '@/lib/format';
+
+export interface ShowWithStats {
+  id: string;
+  startsAt: string;
+  totalSeats?: number;
+  availableSeats?: number;
+  soldSeats?: number;
+  soldOut?: boolean;
+  pricing?: { VIP?: number; PREMIUM?: number; STANDARD?: number } | null;
+  minPrice?: number;
+}
+
+interface CinemaShowSelectorProps {
+  shows: ShowWithStats[];
+  selectedShowId: string | null;
+  onSelectShow: (show: ShowWithStats) => void;
+}
+
+const weekdayFmt = new Intl.DateTimeFormat('en-IN', { weekday: 'short' });
+const dayFmt = new Intl.DateTimeFormat('en-IN', { day: '2-digit' });
+const monthFmt = new Intl.DateTimeFormat('en-IN', { month: 'short' });
+const timeFmt = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+function toDateKey(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function isToday(d: Date) {
+  const today = new Date();
+  return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+}
+
+function isTomorrow(d: Date) {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return d.getDate() === tomorrow.getDate() && d.getMonth() === tomorrow.getMonth() && d.getFullYear() === tomorrow.getFullYear();
+}
+
+export function CinemaShowSelector({
+  shows,
+  selectedShowId,
+  onSelectShow,
+}: CinemaShowSelectorProps) {
+  // Group shows by date and guarantee strict ascending chronological sort
+  const { dateKeys, showsByDate } = useMemo(() => {
+    const map = new Map<string, ShowWithStats[]>();
+    // Sorted up front, so the shows within every date are in order too (morning to night)
+    const sortedShows = [...shows].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+    for (const show of sortedShows) {
+      const d = new Date(show.startsAt);
+      const key = toDateKey(d);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(show);
+    }
+
+    const keys = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
+    return { dateKeys: keys, showsByDate: map };
+  }, [shows]);
+
+  // Initial selected date
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    if (selectedShowId) {
+      const match = shows.find((s) => s.id === selectedShowId);
+      if (match) return toDateKey(new Date(match.startsAt));
+    }
+    return dateKeys[0] || '';
+  });
+
+  // Keep selected date in sync if selectedShowId changes externally
+  useEffect(() => {
+    if (selectedShowId) {
+      const match = shows.find((s) => s.id === selectedShowId);
+      if (match) {
+        const key = toDateKey(new Date(match.startsAt));
+        setSelectedDate(key);
+      }
+    }
+  }, [selectedShowId, shows]);
+
+  // If selectedDate is not in dateKeys (e.g. after show deletions), fallback to earliest date
+  useEffect(() => {
+    if (dateKeys.length > 0 && !dateKeys.includes(selectedDate)) {
+      setSelectedDate(dateKeys[0]!);
+    }
+  }, [dateKeys, selectedDate]);
+
+  // Current shows for the selected date, strictly sorted chronologically by time
+  const currentShows = useMemo(() => {
+    const list = showsByDate.get(selectedDate) || [];
+    return [...list].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  }, [showsByDate, selectedDate]);
+
+  if (shows.length === 0) return null;
+
+  return (
+    <div className="card p-4 sm:p-5 space-y-4">
+      <div className="flex items-center justify-between border-b border-line pb-3">
+        <div className="flex items-center gap-2">
+          <Film className="h-4 w-4 text-accent" />
+          <h2 className="font-display text-sm sm:text-base font-semibold text-ink">
+            Select date and showtime
+          </h2>
+        </div>
+        <span className="text-xs text-ink-3 hidden sm:inline">
+          Reserved seating · live availability
+        </span>
+      </div>
+
+      {/* Date Selection Bar */}
+      <div className="space-y-1.5">
+        <p className="eyebrow">Select date</p>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {dateKeys.map((key) => {
+            const [y, m, d] = key.split('-').map(Number);
+            const dateObj = new Date(y!, m! - 1, d!);
+            const active = selectedDate === key;
+            const today = isToday(dateObj);
+            const tomorrow = isTomorrow(dateObj);
+
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setSelectedDate(key);
+                  // Auto-select first available show on that date if current is not in that date
+                  const showsOnDate = showsByDate.get(key) || [];
+                  const firstAvail = showsOnDate.find((s) => !s.soldOut && new Date(s.startsAt).getTime() > Date.now()) || showsOnDate[0];
+                  if (firstAvail && firstAvail.id !== selectedShowId) {
+                    onSelectShow(firstAvail);
+                  }
+                }}
+                className={`flex shrink-0 flex-col items-center justify-center rounded-xl px-3.5 py-2 transition-colors text-center min-w-[70px] sm:min-w-[76px] border ${
+                  active
+                    ? 'border-ink bg-ink text-bg shadow-sm'
+                    : 'border-line bg-surface text-ink-2 hover:border-line-strong hover:text-ink hover:bg-sunken/40'
+                }`}
+              >
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${active ? 'opacity-80' : 'text-ink-3'}`}>
+                  {today ? 'Today' : tomorrow ? 'Tom' : weekdayFmt.format(dateObj)}
+                </span>
+                <span className="text-base sm:text-lg font-bold leading-tight tabular-nums">
+                  {dayFmt.format(dateObj)}
+                </span>
+                <span className={`text-[10px] font-medium uppercase tracking-wide ${active ? 'opacity-70' : 'text-ink-3'}`}>
+                  {monthFmt.format(dateObj)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Available Showtimes for Selected Date */}
+      <div className="space-y-2 pt-2 border-t border-line/70">
+        <div className="flex items-center justify-between">
+          <p className="eyebrow">
+            Available showtimes ({currentShows.length})
+          </p>
+          <div className="flex items-center gap-3 text-[11px] text-ink-3">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-ok" /> Available
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-warn" /> Selling fast
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-line-strong" /> Sold out
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {currentShows.map((show) => {
+            const date = new Date(show.startsAt);
+            const isSelected = selectedShowId === show.id;
+            const isPast = date.getTime() <= Date.now();
+            const soldOut = show.soldOut || (show.totalSeats !== undefined && show.availableSeats === 0);
+            const disabled = isPast || soldOut;
+            const left = show.totalSeats && show.availableSeats !== undefined && show.totalSeats > 0
+              ? show.availableSeats / show.totalSeats
+              : 1;
+            const sellingFast = !disabled && left <= 0.2;
+
+            const minPrice = show.minPrice || show.pricing?.STANDARD || show.pricing?.PREMIUM || 40000;
+
+            return (
+              <button
+                key={show.id}
+                type="button"
+                disabled={disabled}
+                onClick={() => onSelectShow(show)}
+                className={`relative group flex flex-col items-start justify-between rounded-xl p-3 text-left transition-all border ${
+                  isSelected
+                    ? 'border-accent bg-accent-soft/60 shadow-sm'
+                    : disabled
+                      ? 'border-line/40 bg-sunken/30 opacity-50 cursor-not-allowed'
+                      : 'border-line bg-surface hover:border-line-strong hover:bg-sunken/40'
+                }`}
+              >
+                <div className="w-full space-y-1">
+                  <div className="flex items-center justify-between w-full">
+                    <span className="font-display text-base sm:text-lg font-bold text-ink tracking-tight tabular-nums">
+                      {timeFmt.format(date)}
+                    </span>
+                    {isSelected && (
+                      <CheckCircle2 className="h-4 w-4 text-accent shrink-0" />
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <span className="tag text-[10px] py-0 px-1.5 text-ink-3 font-normal tracking-normal">
+                      Dolby Atmos
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-3 w-full border-t border-line/60 pt-2 flex items-baseline justify-between text-xs">
+                  <span className="font-semibold text-ink tabular-nums">
+                    {formatINR(minPrice)}
+                  </span>
+
+                  {soldOut ? (
+                    <span className="tag text-[10px] py-0 px-1.5 bg-danger-soft text-danger">Sold out</span>
+                  ) : isPast ? (
+                    <span className="tag text-[10px] py-0 px-1.5">Ended</span>
+                  ) : sellingFast ? (
+                    <span className="tag text-[10px] py-0 px-1.5 bg-warn-soft text-warn font-semibold">
+                      {show.availableSeats} left
+                    </span>
+                  ) : (
+                    <span className="tag text-[10px] py-0 px-1.5 bg-ok-soft text-ok font-medium">
+                      {show.availableSeats !== undefined ? `${show.availableSeats} open` : 'Available'}
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+

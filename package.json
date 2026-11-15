@@ -1,0 +1,37 @@
+{
+  "name": "seat-lock",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @repo/shared build && pnpm --parallel --filter api --filter web dev",
+    "dev:api": "pnpm --filter @repo/shared build && pnpm --filter api dev",
+    "dev:web": "pnpm --filter web dev",
+    "build": "pnpm --recursive run build",
+    "build:api": "pnpm --filter @repo/shared build && pnpm --filter api build",
+    "build:web": "pnpm --filter @repo/shared build && pnpm --filter web build",
+    "start:api": "pnpm --filter api start",
+    "start:web": "pnpm --filter web start",
+    "typecheck": "pnpm --filter @repo/shared build && pnpm --filter api prisma:generate && pnpm --recursive run typecheck",
+    "check:layout": "pnpm --filter api check:layout",
+    "db:generate": "pnpm --filter api prisma:generate",
+    "db:push": "pnpm --filter api db:push",
+    "db:migrate": "pnpm --filter api prisma:migrate",
+    "db:deploy": "pnpm --filter api prisma:deploy",
+    "db:seed": "pnpm --filter api prisma:seed",
+    "db:clean": "pnpm --filter api db:clean",
+    "db:studio": "pnpm --filter api prisma:studio",
+    "docker:infra": "docker compose up -d",
+    "docker:full": "docker compose --profile app up -d --build",
+    "docker:seed": "docker compose --profile seed run --rm seed",
+    "docker:down": "docker compose --profile app --profile seed down"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^11.1.0",
+    "prettier": "^3.5.0",
+    "typescript": "^5.7.3"
+  },
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=20"
+  }
+}

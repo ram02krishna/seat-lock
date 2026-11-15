@@ -1,0 +1,329 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ */
+/* Theme tokens (space-separated RGB so Tailwind can apply alpha)       */
+/* ------------------------------------------------------------------ */
+:root {
+  --bg: 243 245 248;
+  --surface: 255 255 255;
+  --sunken: 233 237 243;
+  --line: 223 228 236;
+  --line-strong: 201 209 221;
+  --ink: 16 22 34;
+  --ink-2: 62 73 92;
+  --ink-3: 98 110 130;
+
+  --accent: 37 84 214;
+  --accent-hover: 29 68 180;
+  --accent-soft: 226 234 252;
+  --accent-fg: 255 255 255;
+
+  --ok: 22 128 80;
+  --ok-soft: 221 243 231;
+  --warn: 160 90 5;
+  --warn-soft: 253 240 214;
+  --danger: 190 40 40;
+  --danger-soft: 253 229 229;
+
+  /* seat map tiers */
+  --tier-vip: 176 120 16;
+  --tier-premium: 14 128 118;
+  --tier-standard: 96 112 138;
+
+  --shadow: 16 30 60;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: 11 14 20;
+  --surface: 18 22 31;
+  --sunken: 25 30 41;
+  --line: 38 45 59;
+  --line-strong: 58 68 86;
+  --ink: 235 240 247;
+  --ink-2: 171 181 197;
+  --ink-3: 122 134 153;
+
+  --accent: 102 144 255;
+  --accent-hover: 132 166 255;
+  --accent-soft: 24 38 74;
+  --accent-fg: 8 14 32;
+
+  --ok: 88 200 142;
+  --ok-soft: 22 52 40;
+  --warn: 228 176 84;
+  --warn-soft: 58 46 22;
+  --danger: 248 130 126;
+  --danger-soft: 66 28 30;
+
+  --tier-vip: 222 168 70;
+  --tier-premium: 62 190 176;
+  --tier-standard: 140 156 184;
+
+  --shadow: 0 0 0;
+  color-scheme: dark;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+@layer base {
+  html {
+    @apply bg-bg;
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 5rem;
+    overflow-x: hidden;
+  }
+
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    line-height: 1.55;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: rgb(var(--accent) / 0.22);
+  }
+
+  *:focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--line-strong));
+    border-radius: 9999px;
+    border: 2px solid rgb(var(--bg));
+  }
+
+  input, select, textarea, button {
+    font: inherit;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Small component layer: just the pieces repeated across every page   */
+/* ------------------------------------------------------------------ */
+@layer components {
+  .page {
+    @apply mx-auto w-full px-3.5 sm:px-6;
+  }
+
+  .card {
+    @apply rounded-xl border border-line bg-surface shadow-card;
+  }
+
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-transparent px-3.5 py-2 text-sm font-medium
+      transition-colors duration-100 select-none whitespace-nowrap
+      active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 touch-manipulation;
+  }
+  .btn-md {
+    @apply px-3.5 py-2 text-sm font-medium;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-[13px];
+  }
+  .btn-xs {
+    @apply h-7 px-2.5 py-0 text-xs rounded-md gap-1.5 font-medium;
+  }
+  .btn-primary {
+    @apply bg-accent text-accent-fg hover:bg-accent-hover;
+  }
+  .btn-secondary {
+    @apply border border-line-strong bg-surface text-ink hover:bg-sunken;
+  }
+  .btn-edit {
+    @apply border border-accent/40 bg-surface text-accent hover:border-accent hover:bg-accent-soft/70;
+  }
+  .btn-delete {
+    @apply border border-danger/40 bg-surface text-danger hover:border-danger hover:bg-danger-soft/70;
+  }
+  .btn-ghost {
+    @apply text-ink-2 hover:bg-sunken hover:text-ink;
+  }
+  .btn-danger {
+    @apply bg-danger text-accent-fg hover:opacity-90;
+  }
+
+  /* 16px on mobile prevents iOS Safari from forcibly auto-zooming inputs */
+  .field {
+    @apply block w-full rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-base sm:text-sm text-ink
+      placeholder:text-ink-3/70 transition-colors
+      focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20;
+  }
+  .field-label {
+    @apply mb-1.5 block text-[13px] font-medium text-ink-2;
+  }
+
+  .tag {
+    @apply inline-flex items-center gap-1 rounded-md bg-sunken px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-ink-2;
+  }
+
+  .notice {
+    @apply flex items-start gap-2.5 rounded-lg border px-3.5 py-2.5 text-[13px] leading-snug;
+  }
+  .notice-error { @apply border-danger/25 bg-danger-soft text-danger; }
+  .notice-ok { @apply border-ok/25 bg-ok-soft text-ok; }
+  .notice-warn { @apply border-warn/25 bg-warn-soft text-warn; }
+
+  .skeleton {
+    background: linear-gradient(
+      100deg,
+      rgb(var(--sunken)) 30%,
+      rgb(var(--line) / 0.7) 50%,
+      rgb(var(--sunken)) 70%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer rounded-lg;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Safe-area bottom padding so content isn't hidden behind iOS home bar
+     or the mobile cart bottom sheet. */
+  .pb-safe {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+
+  /* Extra bottom padding on pages that have the mobile cart bottom sheet (~5.5rem tall) */
+  .pb-cart-mobile {
+    padding-bottom: 7rem;
+  }
+
+  /* Drag cursor utilities for the seat map (not generated by Tailwind by default) */
+  .cursor-grab {
+    cursor: grab;
+  }
+  .cursor-grabbing {
+    cursor: grabbing;
+  }
+}
+
+/* Seats are plain SVG groups; keep their transitions cheap and tidy */
+.seat-shape {
+  transition: fill 140ms ease, stroke 140ms ease, opacity 140ms ease;
+}
+.seat-group:focus-visible {
+  outline: none;
+}
+.seat-group:focus-visible .seat-focus {
+  opacity: 1;
+}
+
+/* html5-qrcode injects its own unstyled controls */
+#qr-reader {
+  border: 0 !important;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+#qr-reader__scan_region,
+#qr-reader__dashboard {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+#qr-reader video,
+#qr-reader canvas,
+#qr-reader img {
+  max-width: 100% !important;
+}
+#qr-reader__dashboard_section_csr {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+#qr-reader button {
+  @apply rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-fg;
+}
+#qr-reader select {
+  @apply rounded-md border border-line-strong bg-surface px-2 py-1 text-sm text-ink;
+}
+#qr-reader a { @apply text-accent underline; }
+#qr-reader__dashboard_section_csr span { color: rgb(var(--ink-2)) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Print: tickets only                                                  */
+/* ------------------------------------------------------------------ */
+@media print {
+  header.no-print,
+  nav,
+  footer,
+  aside,
+  .no-print {
+    display: none !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #111827 !important;
+    font-size: 11pt;
+  }
+
+  @page {
+    size: auto;
+    margin: 12mm 14mm;
+  }
+
+  .page {
+    animation: none !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* When an order is selected for printing, hide all other order cards */
+  body[data-printing-order] .order-card:not([data-order-printing="true"]) {
+    display: none !important;
+  }
+
+  .card {
+    box-shadow: none !important;
+    border: 1px solid #d1d5db !important;
+    background: #ffffff !important;
+    color: #111827 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .ticket-card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    border: 1px solid #d1d5db !important;
+    background: #f9fafb !important;
+  }
+}

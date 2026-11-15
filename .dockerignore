@@ -1,0 +1,37 @@
+# Dependencies
+**/node_modules
+node_modules
+
+# Version Control
+.git
+.gitignore
+.github
+
+# Build Artifacts & Caches
+**/.next
+.next
+**/dist
+dist
+**/.turbo
+.turbo
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Environment & Secrets
+.env
+.env.local
+.env.production
+.env.development
+
+# Logs & Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+.vscode
+.idea

@@ -1,0 +1,204 @@
+import { Prisma } from '@prisma/client';
+import { prisma } from '../db';
+import { AppError } from '../errors';
+import { scheduleHoldExpiry } from '../jobs/holdExpiry.queue';
+
+const HOLD_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+
+export async function holdSeats(params: {
+  eventId: string;
+  seatIds: string[];
+  userId: string;
+  showId?: string;
+}) {
+  const { eventId, seatIds, userId, showId } = params;
+
+  if (seatIds.length === 0) {
+    throw new AppError(400, 'Select at least one seat');
+  }
+
+  if (seatIds.length > 6) {
+    throw new AppError(400, 'Maximum 6 seats per hold');
+  }
+
+  // Sort seatIds to prevent deadlocks when concurrent users request overlapping seats
+  const sortedIds = [...new Set(seatIds)].sort();
+
+  // Check event exists
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+  });
+  if (!event || event.status !== 'PUBLISHED') {
+    throw new AppError(404, 'Event not found or not open for booking');
+  }
+
+  // A cinema is booked per show: the event's own start is just its earliest show, which may have
+  // passed while later shows are still on sale.
+  const showCount = await prisma.show.count({ where: { eventId } });
+  if (showId) {
+    const show = await prisma.show.findUnique({ where: { id: showId }, select: { eventId: true, startsAt: true } });
+    if (!show || show.eventId !== eventId) {
+      throw new AppError(404, 'Show not found');
+    }
+    if (show.startsAt.getTime() <= Date.now()) {
+      throw new AppError(400, 'This show has already started');
+    }
+  } else if (showCount > 0) {
+    throw new AppError(400, 'Choose a showtime before selecting seats');
+  } else if (event.startsAt.getTime() <= Date.now()) {
+    throw new AppError(400, 'This event has already started');
+  }
+
+  // Check user exists
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  if (!user) {
+    throw new AppError(401, 'User account not found. Please sign in again.');
+  }
+
+  // Run hold query inside transaction for all-or-nothing atomicity
+  const { heldSeats, released, holdExpiresAt } = await prisma.$transaction(async (tx) => {
+    // Serialize hold creation for a user. Without a row lock, two simultaneous requests for
+    // different events can both observe no existing hold and leave the user holding both.
+    const lockedUser = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE;
+    `;
+    if (lockedUser.length === 0) {
+      throw new AppError(401, 'User account not found. Please sign in again.');
+    }
+
+    // Start the hold timer after acquiring the lock, not before waiting for another request.
+    const holdExpiresAt = new Date(Date.now() + HOLD_DURATION_MS);
+
+    // One active hold per user. Anything they currently hold that isn't part of this request is
+    // let go, including seats at other events, so the UI only ever has one hold to describe.
+    const existingUserHolds = await tx.eventSeat.findMany({
+      where: {
+        heldByUserId: userId,
+        status: 'HELD',
+        holdExpiresAt: { gt: new Date() },
+      },
+      select: { id: true, seatId: true, eventId: true, showId: true },
+    });
+
+    // Seats let go by this request, grouped by event and show so each group is announced to the
+    // right room. The same physical seat id exists in every show of a cinema, so a release must
+    // never be reported against a different show than the one it happened in.
+    const releasedGroups = new Map<string, { eventId: string; showId: string | null; seatIds: string[] }>();
+
+    const seatsToRelease = existingUserHolds.filter(
+      (h) =>
+        !(
+          h.eventId === eventId &&
+          (showId ? h.showId === showId : true) &&
+          (sortedIds.includes(h.id) || sortedIds.includes(h.seatId))
+        ),
+    );
+
+    if (seatsToRelease.length > 0) {
+      await tx.eventSeat.updateMany({
+        where: {
+          id: { in: seatsToRelease.map((s) => s.id) },
+          heldByUserId: userId,
+          status: 'HELD',
+        },
+        data: {
+          status: 'AVAILABLE',
+          heldByUserId: null,
+          holdExpiresAt: null,
+          version: { increment: 1 },
+        },
+      });
+      for (const s of seatsToRelease) {
+        const key = `${s.eventId}|${s.showId ?? ''}`;
+        const group = releasedGroups.get(key) ?? { eventId: s.eventId, showId: s.showId, seatIds: [] };
+        group.seatIds.push(s.seatId);
+        releasedGroups.set(key, group);
+      }
+    }
+
+    // Atomic conditional UPDATE:
+    // Only take seats that are AVAILABLE, whose hold has already expired,
+    // OR are already held by this user (allows refreshing/extending hold or re-selecting own seats).
+    const updatedRows = await tx.$queryRaw<Array<{ id: string; seatId: string; price: number }>>`
+      UPDATE "EventSeat"
+      SET 
+        status = 'HELD'::"SeatStatus",
+        "heldByUserId" = ${userId},
+        "holdExpiresAt" = ${holdExpiresAt},
+        version = version + 1,
+        "updatedAt" = NOW()
+      WHERE "eventId" = ${eventId}
+        ${showId ? Prisma.sql`AND "showId" = ${showId}` : Prisma.sql``}
+        AND ("seatId" IN (${Prisma.join(sortedIds)}) OR id IN (${Prisma.join(sortedIds)}))
+        AND (
+          status = 'AVAILABLE'::"SeatStatus"
+          OR (
+            status = 'HELD'::"SeatStatus"
+            AND ("holdExpiresAt" < NOW() OR "heldByUserId" = ${userId})
+          )
+        )
+      RETURNING id, "seatId", price;
+    `;
+
+    // All-or-nothing check: if any requested seat wasn't acquired, rollback
+    if (updatedRows.length !== sortedIds.length) {
+      throw new AppError(409, 'One or more selected seats are no longer available');
+    }
+
+    return { heldSeats: updatedRows, released: Array.from(releasedGroups.values()), holdExpiresAt };
+  });
+
+  // Schedule a delayed BullMQ job to release the seats if they are never confirmed. The database
+  // is the source of truth (expired holds are ignored by every query and swept by the periodic
+  // cleanup job), so don't make the customer wait on Redis, which could hang if it is unreachable.
+  void scheduleHoldExpiry(
+    {
+      eventId,
+      seatIds: heldSeats.map((s) => s.seatId),
+      userId,
+    },
+    Math.max(1000, holdExpiresAt.getTime() - Date.now())
+  );
+
+  return {
+    eventId,
+    heldSeats,
+    holdExpiresAt,
+    released,
+  };
+}
+
+export async function releaseSeats(params: {
+  eventId: string;
+  seatIds: string[];
+  userId: string;
+  showId?: string;
+}) {
+  const { eventId, seatIds, userId, showId } = params;
+  const ids = [...new Set(seatIds)];
+
+  if (ids.length === 0) {
+    return { releasedCount: 0, releasedSeatIds: [] as string[] };
+  }
+
+  const updatedRows = await prisma.$queryRaw<Array<{ id: string; seatId: string }>>`
+    UPDATE "EventSeat"
+    SET 
+      status = 'AVAILABLE'::"SeatStatus",
+      "heldByUserId" = NULL,
+      "holdExpiresAt" = NULL,
+      version = version + 1,
+      "updatedAt" = NOW()
+    WHERE "eventId" = ${eventId}
+      ${showId ? Prisma.sql`AND "showId" = ${showId}` : Prisma.sql``}
+      AND "heldByUserId" = ${userId}
+      AND ("seatId" IN (${Prisma.join(ids)}) OR id IN (${Prisma.join(ids)}))
+      AND status = 'HELD'::"SeatStatus"
+    RETURNING id, "seatId";
+  `;
+
+  return { releasedCount: updatedRows.length, releasedSeatIds: updatedRows.map((r) => r.seatId) };
+}
