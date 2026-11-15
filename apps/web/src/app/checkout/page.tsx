@@ -245,6 +245,13 @@ function CheckoutContent() {
                 >
                   sign in
                 </Link>{' '}
+                or{' '}
+                <Link
+                  className="font-semibold underline"
+                  href={`/login?mode=signup&redirect=${encodeURIComponent(`/checkout?eventId=${eventId}${showId ? `&showId=${showId}` : ''}`)}`}
+                >
+                  sign up
+                </Link>{' '}
                 to confirm this booking.
               </span>
             </p>
