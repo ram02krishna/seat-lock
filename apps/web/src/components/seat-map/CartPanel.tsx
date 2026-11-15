@@ -65,6 +65,21 @@ export function CartPanel({ eventId, showId, showStartsAt, onHoldSuccess, onRele
         ),
       };
     });
+<<<<<<< HEAD
+=======
+    // Also patch default key if any
+    queryClient.setQueryData(['events', eventId, 'seats'], (old: any) => {
+      if (!old?.seats) return old;
+      return {
+        ...old,
+        seats: old.seats.map((seat: any) =>
+          ids.has(seat.id) || rawIds.has(seat.seatId)
+            ? { ...seat, status, isHeldByMe: status === 'HELD', holdExpiresAt: expiresAt }
+            : seat,
+        ),
+      };
+    });
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   }
 
   async function handleHold() {

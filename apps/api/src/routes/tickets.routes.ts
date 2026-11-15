@@ -60,6 +60,7 @@ ticketsRouter.post(
         return next(new AppError(400, 'This event has been cancelled'));
       }
 
+<<<<<<< HEAD
       const attendee = {
         email: ticket.order.user.email,
         eventTitle: ticket.eventSeat.event.title,
@@ -71,6 +72,21 @@ ticketsRouter.post(
       // 2. Immediate check if already used
       if (ticket.checkedInAt) {
         return res.status(409).json({ error: 'Ticket already used', checkedInAt: ticket.checkedInAt, attendee });
+=======
+      // 2. Immediate check if already used
+      if (ticket.checkedInAt) {
+        return res.status(409).json({
+          error: 'Ticket already used',
+          checkedInAt: ticket.checkedInAt,
+          attendee: {
+            email: ticket.order.user.email,
+            eventTitle: ticket.eventSeat.event.title,
+            venue: ticket.eventSeat.event.venue.name,
+            seat: `Row ${ticket.eventSeat.seat.row}, Seat ${ticket.eventSeat.seat.number}`,
+            tier: ticket.eventSeat.seat.tier,
+          },
+        });
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
       }
 
       // 3. Atomic conditional update: set checkedInAt ONLY WHERE it is still null
@@ -84,14 +100,36 @@ ticketsRouter.post(
       if (updated.length === 0) {
         // Concurrently checked in at another gate
         const recheck = await prisma.ticket.findUnique({ where: { id: ticket.id } });
+<<<<<<< HEAD
         return res.status(409).json({ error: 'Ticket already used', checkedInAt: recheck?.checkedInAt, attendee });
+=======
+        return res.status(409).json({
+          error: 'Ticket already used',
+          checkedInAt: recheck?.checkedInAt,
+          attendee: {
+            email: ticket.order.user.email,
+            seat: `Row ${ticket.eventSeat.seat.row}, Seat ${ticket.eventSeat.seat.number}`,
+          },
+        });
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
       }
 
       return res.status(200).json({
         message: 'Check-in successful',
         ticketId: ticket.id,
+<<<<<<< HEAD
         checkedInAt: updated[0]!.checkedInAt,
         attendee,
+=======
+        checkedInAt: updated[0].checkedInAt,
+        attendee: {
+          email: ticket.order.user.email,
+          eventTitle: ticket.eventSeat.event.title,
+          venue: ticket.eventSeat.event.venue.name,
+          seat: `Row ${ticket.eventSeat.seat.row}, Seat ${ticket.eventSeat.seat.number}`,
+          tier: ticket.eventSeat.seat.tier,
+        },
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
       });
     } catch (err) {
       next(err);

@@ -7,7 +7,13 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+<<<<<<< HEAD
     "typecheck": "tsc --noEmit"
+=======
+    "typecheck": "tsc --noEmit",
+    "lint": "echo \"No lint config for shared yet\"",
+    "test": "echo \"No tests for shared yet\""
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   },
   "dependencies": {
     "zod": "^3.24.2"

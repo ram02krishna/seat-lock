@@ -2,6 +2,7 @@
   "name": "seat-lock",
   "version": "0.1.0",
   "private": true,
+<<<<<<< HEAD
   "scripts": {
     "dev": "pnpm --filter @repo/shared build && pnpm --parallel --filter api --filter web dev",
     "dev:api": "pnpm --filter @repo/shared build && pnpm --filter api dev",
@@ -24,14 +25,51 @@
     "docker:full": "docker compose --profile app up -d --build",
     "docker:seed": "docker compose --profile seed run --rm seed",
     "docker:down": "docker compose --profile app --profile seed down"
+=======
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "pnpm --filter @repo/shared build && pnpm --filter api dev",
+    "dev:backend": "pnpm --filter @repo/shared build && pnpm --filter api dev",
+    "dev:web": "pnpm --filter web dev",
+    "dev": "pnpm --filter @repo/shared build && pnpm --parallel --filter api --filter web dev",
+    "build": "pnpm --recursive run build",
+    "build:web": "pnpm --filter @repo/shared build && pnpm --filter web build",
+    "build:api": "pnpm --filter @repo/shared build && pnpm --filter api build",
+    "build:backend": "pnpm --filter @repo/shared build && pnpm --filter api build",
+    "start:api": "pnpm --filter @repo/shared build && pnpm --filter api start",
+    "start:backend": "pnpm --filter @repo/shared build && pnpm --filter api start",
+    "lint": "pnpm --recursive run lint",
+    "typecheck": "pnpm --filter @repo/shared build && pnpm --filter api prisma:generate && pnpm --recursive run typecheck",
+    "db:push": "pnpm --filter api db:push",
+    "db:migrate": "pnpm --filter api prisma:migrate",
+    "db:seed": "pnpm --filter api prisma:seed",
+    "seed": "pnpm --filter api prisma:seed",
+    "db:studio": "pnpm --filter api prisma:studio",
+    "prisma:studio": "pnpm --filter api prisma:studio",
+    "prisma:generate": "pnpm --filter api prisma:generate",
+    "db:generate": "pnpm --filter api prisma:generate",
+    "db:dev": "pnpm --filter api prisma:dev",
+    "prisma:dev": "pnpm --filter api prisma:dev",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:full": "docker compose --profile app up -d"
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   },
   "devDependencies": {
     "dotenv-cli": "^11.1.0",
     "prettier": "^3.5.0",
     "typescript": "^5.7.3"
+<<<<<<< HEAD
   },
   "packageManager": "pnpm@10.34.9",
   "engines": {
     "node": ">=20"
+=======
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   }
 }

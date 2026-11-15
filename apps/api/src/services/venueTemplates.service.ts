@@ -30,6 +30,18 @@ export interface VenueTemplateConfig {
     PREMIUM: number;
     STANDARD: number;
   };
+<<<<<<< HEAD
+=======
+  generateSeats: (venueId: string) => Array<{
+    venueId: string;
+    section: string;
+    row: string;
+    number: number;
+    x: number;
+    y: number;
+    tier: string;
+  }>;
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 }
 
 export const VENUE_TEMPLATES: Record<VenueType, VenueTemplateConfig> = {
@@ -64,6 +76,105 @@ export const VENUE_TEMPLATES: Record<VenueType, VenueTemplateConfig> = {
       PREMIUM: 70000,
       STANDARD: 40000,
     },
+<<<<<<< HEAD
+=======
+    generateSeats: (venueId: string) => {
+      const seats: Array<{
+        venueId: string;
+        section: string;
+        row: string;
+        number: number;
+        x: number;
+        y: number;
+        tier: string;
+      }> = [];
+
+      // VIP Recliners (Rows A, B): 8 seats per row (4 left, 4 right with wide center aisle)
+      ['A', 'B'].forEach((row, rIdx) => {
+        const y = 140 + rIdx * 60;
+        // Left block: seats 1-4
+        for (let num = 1; num <= 4; num++) {
+          seats.push({
+            venueId,
+            section: 'VIP',
+            row,
+            number: num,
+            x: 230 + (num - 1) * 60,
+            y,
+            tier: 'VIP',
+          });
+        }
+        // Right block: seats 5-8
+        for (let num = 5; num <= 8; num++) {
+          seats.push({
+            venueId,
+            section: 'VIP',
+            row,
+            number: num,
+            x: 590 + (num - 5) * 60,
+            y,
+            tier: 'VIP',
+          });
+        }
+      });
+
+      // Premium Club (Rows C, D, E): 12 seats per row (6 left, 6 right)
+      ['C', 'D', 'E'].forEach((row, rIdx) => {
+        const y = 285 + rIdx * 52;
+        for (let num = 1; num <= 6; num++) {
+          seats.push({
+            venueId,
+            section: 'PREMIUM',
+            row,
+            number: num,
+            x: 165 + (num - 1) * 50,
+            y,
+            tier: 'PREMIUM',
+          });
+        }
+        for (let num = 7; num <= 12; num++) {
+          seats.push({
+            venueId,
+            section: 'PREMIUM',
+            row,
+            number: num,
+            x: 565 + (num - 7) * 50,
+            y,
+            tier: 'PREMIUM',
+          });
+        }
+      });
+
+      // Standard Rows (Rows F, G, H, I): 14 seats per row (7 left, 7 right)
+      ['F', 'G', 'H', 'I'].forEach((row, rIdx) => {
+        const y = 465 + rIdx * 50;
+        for (let num = 1; num <= 7; num++) {
+          seats.push({
+            venueId,
+            section: 'STANDARD',
+            row,
+            number: num,
+            x: 135 + (num - 1) * 48,
+            y,
+            tier: 'STANDARD',
+          });
+        }
+        for (let num = 8; num <= 14; num++) {
+          seats.push({
+            venueId,
+            section: 'STANDARD',
+            row,
+            number: num,
+            x: 555 + (num - 8) * 48,
+            y,
+            tier: 'STANDARD',
+          });
+        }
+      });
+
+      return seats;
+    },
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   },
 
   CONFERENCE_HALL: {
@@ -97,6 +208,73 @@ export const VENUE_TEMPLATES: Record<VenueType, VenueTemplateConfig> = {
       PREMIUM: 150000,
       STANDARD: 80000,
     },
+<<<<<<< HEAD
+=======
+    generateSeats: (venueId: string) => {
+      const seats: Array<{
+        venueId: string;
+        section: string;
+        row: string;
+        number: number;
+        x: number;
+        y: number;
+        tier: string;
+      }> = [];
+
+      // VIP Front Delegation (Rows A, B): 10 seats (3 left, 4 center, 3 right)
+      ['A', 'B'].forEach((row, rIdx) => {
+        const y = 140 + rIdx * 56;
+        // Left column
+        [190, 245, 300].forEach((x, idx) => {
+          seats.push({ venueId, section: 'VIP', row, number: idx + 1, x, y, tier: 'VIP' });
+        });
+        // Center column
+        [415, 470, 525, 580].forEach((x, idx) => {
+          seats.push({ venueId, section: 'VIP', row, number: idx + 4, x, y, tier: 'VIP' });
+        });
+        // Right column
+        [695, 750, 805].forEach((x, idx) => {
+          seats.push({ venueId, section: 'VIP', row, number: idx + 8, x, y, tier: 'VIP' });
+        });
+      });
+
+      // Premium Corporate Desks (Rows C, D, E): 12 seats (3 left, 6 center, 3 right)
+      ['C', 'D', 'E'].forEach((row, rIdx) => {
+        const y = 280 + rIdx * 50;
+        // Left
+        [180, 235, 290].forEach((x, idx) => {
+          seats.push({ venueId, section: 'PREMIUM', row, number: idx + 1, x, y, tier: 'PREMIUM' });
+        });
+        // Center
+        [375, 425, 475, 525, 575, 625].forEach((x, idx) => {
+          seats.push({ venueId, section: 'PREMIUM', row, number: idx + 4, x, y, tier: 'PREMIUM' });
+        });
+        // Right
+        [710, 765, 820].forEach((x, idx) => {
+          seats.push({ venueId, section: 'PREMIUM', row, number: idx + 10, x, y, tier: 'PREMIUM' });
+        });
+      });
+
+      // Standard Conference Rows (Rows F, G, H, I): 14 seats (4 left, 6 center, 4 right)
+      ['F', 'G', 'H', 'I'].forEach((row, rIdx) => {
+        const y = 460 + rIdx * 48;
+        // Left
+        [140, 190, 240, 290].forEach((x, idx) => {
+          seats.push({ venueId, section: 'STANDARD', row, number: idx + 1, x, y, tier: 'STANDARD' });
+        });
+        // Center
+        [375, 425, 475, 525, 575, 625].forEach((x, idx) => {
+          seats.push({ venueId, section: 'STANDARD', row, number: idx + 5, x, y, tier: 'STANDARD' });
+        });
+        // Right
+        [710, 760, 810, 860].forEach((x, idx) => {
+          seats.push({ venueId, section: 'STANDARD', row, number: idx + 11, x, y, tier: 'STANDARD' });
+        });
+      });
+
+      return seats;
+    },
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   },
 
   AUDITORIUM: {
@@ -130,6 +308,63 @@ export const VENUE_TEMPLATES: Record<VenueType, VenueTemplateConfig> = {
       PREMIUM: 175000,
       STANDARD: 85000,
     },
+<<<<<<< HEAD
+=======
+    generateSeats: (venueId: string) => {
+      const seats: Array<{
+        venueId: string;
+        section: string;
+        row: string;
+        number: number;
+        x: number;
+        y: number;
+        tier: string;
+      }> = [];
+
+      // Curved Amphitheater layout generator
+      function generateCurvedRow(
+        section: string,
+        row: string,
+        count: number,
+        baseY: number,
+        spacing: number,
+        sag: number
+      ) {
+        for (let num = 1; num <= count; num++) {
+          const offset = num - (count + 1) / 2;
+          const x = 500 + offset * spacing;
+          const normalized = Math.abs(offset) / (count / 2);
+          const dy = Math.pow(normalized, 1.8) * sag;
+          seats.push({
+            venueId,
+            section,
+            row,
+            number: num,
+            x: Math.round(x),
+            y: Math.round(baseY + dy),
+            tier: section,
+          });
+        }
+      }
+
+      // VIP Stalls: Rows A, B (10 seats each)
+      ['A', 'B'].forEach((row, rIdx) => {
+        generateCurvedRow('VIP', row, 10, 145 + rIdx * 52, 52, 14);
+      });
+
+      // Premium Mezzanine: Rows C, D, E (12 seats each)
+      ['C', 'D', 'E'].forEach((row, rIdx) => {
+        generateCurvedRow('PREMIUM', row, 12, 280 + rIdx * 50, 48, 18);
+      });
+
+      // Standard Balcony: Rows F, G, H, I (14 seats each)
+      ['F', 'G', 'H', 'I'].forEach((row, rIdx) => {
+        generateCurvedRow('STANDARD', row, 14, 460 + rIdx * 48, 46, 24);
+      });
+
+      return seats;
+    },
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   },
 
   ARENA: {
@@ -163,6 +398,94 @@ export const VENUE_TEMPLATES: Record<VenueType, VenueTemplateConfig> = {
       PREMIUM: 200000,
       STANDARD: 95000,
     },
+<<<<<<< HEAD
+=======
+    generateSeats: (venueId: string) => {
+      const seats: Array<{
+        venueId: string;
+        section: string;
+        row: string;
+        number: number;
+        x: number;
+        y: number;
+        tier: string;
+      }> = [];
+
+      // VIP Golden Circle Pit (Rows A, B): 10 seats flanking the central catwalk (5 left, 5 right)
+      ['A', 'B'].forEach((row, rIdx) => {
+        const y = 140 + rIdx * 54;
+        // Left of catwalk
+        for (let num = 1; num <= 5; num++) {
+          seats.push({
+            venueId,
+            section: 'VIP',
+            row,
+            number: num,
+            x: 200 + (num - 1) * 48,
+            y,
+            tier: 'VIP',
+          });
+        }
+        // Right of catwalk
+        for (let num = 6; num <= 10; num++) {
+          seats.push({
+            venueId,
+            section: 'VIP',
+            row,
+            number: num,
+            x: 608 + (num - 6) * 48,
+            y,
+            tier: 'VIP',
+          });
+        }
+      });
+
+      // Premium Lower Bowl (Rows C, D, E): 12 seats (6 left, 6 right)
+      ['C', 'D', 'E'].forEach((row, rIdx) => {
+        const y = 285 + rIdx * 50;
+        for (let num = 1; num <= 6; num++) {
+          seats.push({
+            venueId,
+            section: 'PREMIUM',
+            row,
+            number: num,
+            x: 175 + (num - 1) * 48,
+            y,
+            tier: 'PREMIUM',
+          });
+        }
+        for (let num = 7; num <= 12; num++) {
+          seats.push({
+            venueId,
+            section: 'PREMIUM',
+            row,
+            number: num,
+            x: 585 + (num - 7) * 48,
+            y,
+            tier: 'PREMIUM',
+          });
+        }
+      });
+
+      // Standard Upper Bowl (Rows F, G, H, I): 14 seats continuous stadium arc
+      ['F', 'G', 'H', 'I'].forEach((row, rIdx) => {
+        const y = 465 + rIdx * 48;
+        for (let num = 1; num <= 14; num++) {
+          seats.push({
+            venueId,
+            section: 'STANDARD',
+            row,
+            number: num,
+            x: 145 + (num - 1) * 51,
+            y,
+            tier: 'STANDARD',
+          });
+        }
+      });
+
+      return seats;
+    },
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   },
 
   OTHERS: {
@@ -191,6 +514,43 @@ export const VENUE_TEMPLATES: Record<VenueType, VenueTemplateConfig> = {
       PREMIUM: 150000,
       STANDARD: 75000,
     },
+<<<<<<< HEAD
+=======
+    generateSeats: (venueId: string) => {
+      const seats: Array<{
+        venueId: string;
+        section: string;
+        row: string;
+        number: number;
+        x: number;
+        y: number;
+        tier: string;
+      }> = [];
+
+      ['A', 'B'].forEach((row, rIdx) => {
+        const y = 135 + rIdx * 50;
+        for (let num = 1; num <= 10; num++) {
+          seats.push({ venueId, section: 'VIP', row, number: num, x: 275 + (num - 1) * 50, y, tier: 'VIP' });
+        }
+      });
+
+      ['C', 'D', 'E'].forEach((row, rIdx) => {
+        const y = 265 + rIdx * 50;
+        for (let num = 1; num <= 12; num++) {
+          seats.push({ venueId, section: 'PREMIUM', row, number: num, x: 225 + (num - 1) * 50, y, tier: 'PREMIUM' });
+        }
+      });
+
+      ['F', 'G', 'H', 'I'].forEach((row, rIdx) => {
+        const y = 445 + rIdx * 50;
+        for (let num = 1; num <= 14; num++) {
+          seats.push({ venueId, section: 'STANDARD', row, number: num, x: 175 + (num - 1) * 50, y, tier: 'STANDARD' });
+        }
+      });
+
+      return seats;
+    },
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   },
 };
 

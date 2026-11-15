@@ -18,7 +18,11 @@ export function startHoldExpiryWorker(): Worker {
 
       // Release only seats that are still expired at the time of the UPDATE. A separate
       // find-then-update sequence can race with a new hold and accidentally release that hold.
+<<<<<<< HEAD
       const releasedSeats = await prisma.$queryRaw<Array<{ seatId: string; showId: string | null }>>`
+=======
+      const releasedSeats = await prisma.$queryRaw<Array<{ seatId: string }>>`
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
         UPDATE "EventSeat"
         SET
           status = 'AVAILABLE'::"SeatStatus",
@@ -31,6 +35,7 @@ export function startHoldExpiryWorker(): Worker {
           AND "heldByUserId" = ${userId}
           AND status = 'HELD'::"SeatStatus"
           AND "holdExpiresAt" <= NOW()
+<<<<<<< HEAD
         RETURNING "seatId", "showId";
       `;
 
@@ -44,6 +49,16 @@ export function startHoldExpiryWorker(): Worker {
         }
         redisConnection.del('cache:events:published').catch(() => null);
         logger.info(`Released ${releasedSeats.length} expired seats for event ${eventId}`);
+=======
+        RETURNING "seatId";
+      `;
+
+      if (releasedSeats.length > 0) {
+        const releasedSeatIds = releasedSeats.map((seat) => seat.seatId);
+        broadcastSeatsReleased(eventId, { seatIds: releasedSeatIds });
+        redisConnection.del('cache:events:published').catch(() => null);
+        logger.info(`Released ${releasedSeatIds.length} expired seats for event ${eventId}`);
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
       } else {
         logger.info(`No expired seats found for job ${job.id} (already confirmed, released, or renewed)`);
       }

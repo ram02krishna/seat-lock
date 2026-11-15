@@ -59,7 +59,11 @@ export async function holdSeats(params: {
   }
 
   // Run hold query inside transaction for all-or-nothing atomicity
+<<<<<<< HEAD
   const { heldSeats, released, holdExpiresAt } = await prisma.$transaction(async (tx) => {
+=======
+  const { heldSeats, releasedSeatIds, releasedElsewhere, holdExpiresAt } = await prisma.$transaction(async (tx) => {
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     // Serialize hold creation for a user. Without a row lock, two simultaneous requests for
     // different events can both observe no existing hold and leave the user holding both.
     const lockedUser = await tx.$queryRaw<Array<{ id: string }>>`
@@ -83,10 +87,15 @@ export async function holdSeats(params: {
       select: { id: true, seatId: true, eventId: true, showId: true },
     });
 
+<<<<<<< HEAD
     // Seats let go by this request, grouped by event and show so each group is announced to the
     // right room. The same physical seat id exists in every show of a cinema, so a release must
     // never be reported against a different show than the one it happened in.
     const releasedGroups = new Map<string, { eventId: string; showId: string | null; seatIds: string[] }>();
+=======
+    const releasedSeatIds: string[] = [];
+    const releasedElsewhere: Record<string, string[]> = {};
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
     const seatsToRelease = existingUserHolds.filter(
       (h) =>
@@ -112,10 +121,18 @@ export async function holdSeats(params: {
         },
       });
       for (const s of seatsToRelease) {
+<<<<<<< HEAD
         const key = `${s.eventId}|${s.showId ?? ''}`;
         const group = releasedGroups.get(key) ?? { eventId: s.eventId, showId: s.showId, seatIds: [] };
         group.seatIds.push(s.seatId);
         releasedGroups.set(key, group);
+=======
+        if (s.eventId === eventId) {
+          releasedSeatIds.push(s.seatId);
+        } else {
+          (releasedElsewhere[s.eventId] ??= []).push(s.seatId);
+        }
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
       }
     }
 
@@ -148,7 +165,11 @@ export async function holdSeats(params: {
       throw new AppError(409, 'One or more selected seats are no longer available');
     }
 
+<<<<<<< HEAD
     return { heldSeats: updatedRows, released: Array.from(releasedGroups.values()), holdExpiresAt };
+=======
+    return { heldSeats: updatedRows, releasedSeatIds, releasedElsewhere, holdExpiresAt };
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   });
 
   // Schedule a delayed BullMQ job to release the seats if they are never confirmed. The database
@@ -167,7 +188,12 @@ export async function holdSeats(params: {
     eventId,
     heldSeats,
     holdExpiresAt,
+<<<<<<< HEAD
     released,
+=======
+    releasedSeatIds,
+    releasedElsewhere,
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   };
 }
 

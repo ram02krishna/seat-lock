@@ -7,6 +7,10 @@
     "prebuild": "pnpm --filter @repo/shared build",
     "build": "next build",
     "start": "next start -p 3000",
+<<<<<<< HEAD
+=======
+    "lint": "echo \"No lint config for web yet\"",
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

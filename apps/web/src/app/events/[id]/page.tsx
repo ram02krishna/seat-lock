@@ -4,7 +4,11 @@ import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+<<<<<<< HEAD
 import { ArrowLeft, Calendar, MapPin, RefreshCw } from 'lucide-react';
+=======
+import { ArrowLeft, Calendar, Clock, MapPin, RefreshCw } from 'lucide-react';
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 import { apiFetch, ApiError } from '@/lib/api';
 import { formatEventDateTime } from '@/lib/format';
 import { SeatMap, SeatData } from '@/components/seat-map/SeatMap';

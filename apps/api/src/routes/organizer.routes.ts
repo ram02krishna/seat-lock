@@ -2,10 +2,18 @@ import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db';
 import { validateBody } from '../middleware/validate';
+<<<<<<< HEAD
 import { CreateEventSchema, UpdateEventSchema, CreateStaffSchema, CreateShowSchema, UpdateShowSchema } from '@repo/shared';
 import { requireAuth, requireRole } from '../middleware/auth';
 import { AppError } from '../errors';
 import { Prisma, Role, SeatStatus } from '@prisma/client';
+=======
+import { CreateVenueSchema, CreateEventSchema, UpdateEventSchema, GenerateSeatsSchema, CreateStaffSchema, CreateShowSchema, UpdateShowSchema } from '@repo/shared';
+import { requireAuth, requireRole } from '../middleware/auth';
+import { AppError } from '../errors';
+import { Prisma, Role, SeatStatus } from '@prisma/client';
+import { getVenueTemplate, VENUE_TEMPLATES } from '../services/venueTemplates.service';
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 import { redisConnection } from '../redis';
 import { broadcastEventUpdated, broadcastEventDeleted } from '../socket';
 import { sendEventUpdatedEmail } from '../services/email.service';
@@ -17,6 +25,122 @@ export const organizerRouter = Router();
 // Require organizer role for all routes in this router
 organizerRouter.use(requireAuth, requireRole([Role.ORGANIZER]));
 
+<<<<<<< HEAD
+=======
+// List predefined venue templates (Dolby Cinema, Conference Hall, Auditorium, Arena, etc.)
+organizerRouter.get('/venue-templates', async (_req: Request, res: Response) => {
+  const templates = Object.entries(VENUE_TEMPLATES).map(([type, config]) => ({
+    type,
+    defaultName: config.defaultName,
+    layout: config.layout,
+    recommendedPricing: config.recommendedPricing,
+  }));
+  res.status(200).json({ templates });
+});
+
+// Create venue
+organizerRouter.post(
+  '/venues',
+  validateBody(CreateVenueSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { name, layout, venueType } = req.body;
+      const template = getVenueTemplate(venueType);
+      const venueLayout = layout || template.layout;
+
+      const venue = await prisma.venue.create({
+        data: { name, layout: venueLayout as any },
+      });
+
+      // Auto-generate seats for this venue using the template
+      const seatDefs = template.generateSeats(venue.id);
+      await prisma.seat.createMany({ data: seatDefs, skipDuplicates: true });
+
+      const createdVenue = await prisma.venue.findUnique({
+        where: { id: venue.id },
+        include: { seats: true },
+      });
+
+      res.status(201).json({ venue: createdVenue });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// List all venues
+organizerRouter.get('/venues', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const venues = await prisma.venue.findMany({
+      include: {
+        _count: {
+          select: { seats: true, events: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.status(200).json({ venues });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Generate seats for a venue
+organizerRouter.post(
+  '/venues/:id/seats',
+  validateBody(GenerateSeatsSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const venueId = req.params.id as string;
+      const { sections } = req.body;
+
+      const venue = await prisma.venue.findUnique({ where: { id: venueId } });
+      if (!venue) {
+        return next(new AppError(404, 'Venue not found'));
+      }
+
+      const seatsToCreate: Array<{
+        venueId: string;
+        section: string;
+        row: string;
+        number: number;
+        x: number;
+        y: number;
+        tier: string;
+      }> = [];
+
+      for (const section of sections) {
+        section.rows.forEach((rowName: string, rowIndex: number) => {
+          const y = section.startY + rowIndex * (section.rowSpacing || 50);
+          for (let num = 1; num <= section.seatsPerRow; num++) {
+            const x = section.startX + (num - 1) * (section.seatSpacing || 50);
+            seatsToCreate.push({
+              venueId,
+              section: section.name,
+              row: rowName,
+              number: num,
+              x,
+              y,
+              tier: section.tier,
+            });
+          }
+        });
+      }
+
+      await prisma.seat.createMany({
+        data: seatsToCreate,
+        skipDuplicates: true,
+      });
+
+      const count = await prisma.seat.count({ where: { venueId } });
+      res.status(201).json({ message: `Seats created`, totalSeats: count });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 // Create an event. The organizer chooses the seat capacity; the seat map is generated from it.
 organizerRouter.post(
   '/events',
@@ -161,10 +285,17 @@ organizerRouter.delete(
 );
 
 // Overview stats for organizer dashboard
+<<<<<<< HEAD
 organizerRouter.get('/stats', async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Everything on the dashboard is scoped to the signed-in organizer's own events
     const organizerId = req.user!.userId;
+=======
+organizerRouter.get('/stats', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Everything on the dashboard is scoped to the signed-in organizer's own events
+    const organizerId = _req.user!.userId;
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     const totalEvents = await prisma.event.count({ where: { organizerId } });
     const totalVenues = (
       await prisma.event.findMany({ where: { organizerId }, select: { venueId: true }, distinct: ['venueId'] })

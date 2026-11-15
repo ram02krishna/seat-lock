@@ -1,7 +1,11 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
+<<<<<<< HEAD
 import { Film, CheckCircle2 } from 'lucide-react';
+=======
+import { Calendar, Clock, Film, Sparkles, CheckCircle2 } from 'lucide-react';
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 import { formatINR } from '@/lib/format';
 
 export interface ShowWithStats {
@@ -52,7 +56,10 @@ export function CinemaShowSelector({
   // Group shows by date and guarantee strict ascending chronological sort
   const { dateKeys, showsByDate } = useMemo(() => {
     const map = new Map<string, ShowWithStats[]>();
+<<<<<<< HEAD
     // Sorted up front, so the shows within every date are in order too (morning to night)
+=======
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     const sortedShows = [...shows].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
     for (const show of sortedShows) {
       const d = new Date(show.startsAt);
@@ -61,6 +68,14 @@ export function CinemaShowSelector({
       map.get(key)!.push(show);
     }
 
+<<<<<<< HEAD
+=======
+    // Sort shows within each date chronologically (earliest morning to latest night)
+    for (const [key, list] of map.entries()) {
+      list.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+    }
+
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     const keys = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
     return { dateKeys: keys, showsByDate: map };
   }, [shows]);

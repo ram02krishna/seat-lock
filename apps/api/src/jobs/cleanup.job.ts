@@ -6,7 +6,11 @@ import { redisConnection } from '../redis';
 export async function cleanupExpiredHolds(): Promise<number> {
   // This single conditional UPDATE is intentionally atomic. A select-then-update can race
   // with a customer re-holding the same seat and incorrectly clear the newer hold.
+<<<<<<< HEAD
   const expiredSeats = await prisma.$queryRaw<Array<{ eventId: string; showId: string | null; seatId: string }>>`
+=======
+  const expiredSeats = await prisma.$queryRaw<Array<{ eventId: string; seatId: string }>>`
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     UPDATE "EventSeat"
     SET
       status = 'AVAILABLE'::"SeatStatus",
@@ -16,11 +20,16 @@ export async function cleanupExpiredHolds(): Promise<number> {
       "updatedAt" = NOW()
     WHERE status = 'HELD'::"SeatStatus"
       AND "holdExpiresAt" <= NOW()
+<<<<<<< HEAD
     RETURNING "eventId", "showId", "seatId";
+=======
+    RETURNING "eventId", "seatId";
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   `;
 
   if (expiredSeats.length === 0) return 0;
 
+<<<<<<< HEAD
   // Broadcast only the rows the atomic update actually released, per event and show: a cinema
   // seat exists once per show, so clients need to know which show's seat map to update.
   const groups = new Map<string, { eventId: string; showId: string | null; seatIds: string[] }>();
@@ -33,6 +42,18 @@ export async function cleanupExpiredHolds(): Promise<number> {
 
   for (const { eventId, showId, seatIds } of groups.values()) {
     broadcastSeatsReleased(eventId, { seatIds, showId: showId ?? undefined });
+=======
+  // Broadcast only the rows the atomic update actually released.
+  const eventMap = new Map<string, string[]>();
+  for (const seat of expiredSeats) {
+    const list = eventMap.get(seat.eventId) || [];
+    list.push(seat.seatId);
+    eventMap.set(seat.eventId, list);
+  }
+
+  for (const [eventId, seatIds] of eventMap.entries()) {
+    broadcastSeatsReleased(eventId, { seatIds });
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   }
 
   redisConnection.del('cache:events:published').catch(() => null);

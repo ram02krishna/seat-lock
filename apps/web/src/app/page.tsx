@@ -166,7 +166,11 @@ export default function HomePage() {
 
   function prefetch(eventId: string) {
     queryClient.prefetchQuery({
+<<<<<<< HEAD
       queryKey: ['events', eventId, 'seats', 'default'],
+=======
+      queryKey: ['events', eventId, 'seats'],
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
       queryFn: () => apiFetch(`/api/events/${eventId}/seats`),
       staleTime: 30000,
     });

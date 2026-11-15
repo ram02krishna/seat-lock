@@ -25,8 +25,12 @@ This monorepo is fully configured and ready to deploy on [Vercel](https://vercel
    - **Framework Preset**: `Next.js`
    - **Root Directory**: Click *Edit* and select `apps/web`.
    - **Build and Output Settings**:
+<<<<<<< HEAD
      - *Build Command*: Leave the default (`next build`); the `prebuild` hook in `apps/web/package.json` builds `@repo/shared` first.
      - *Install Command*: Leave the default (`pnpm install`).
+=======
+     - *Build Command*: Leave default or set `pnpm --filter @repo/shared build && next build` (a `prebuild` hook is also built-in to `apps/web/package.json`).
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
      - *Output Directory*: Automatically detects `.next`.
 5. Under **Environment Variables**, add:
    | Variable | Value | Description |
@@ -59,8 +63,13 @@ To connect your deployed Vercel frontend with the backend API:
    > Add each trusted preview deployment URL explicitly. The API intentionally does not wildcard-allow all `*.vercel.app` origins because authentication uses credentialed cookies.
 
 2. **Cross-Site Authentication Cookies**:
+<<<<<<< HEAD
    - In production the auth routes set `SameSite=None` and `Secure`, so the browser sends the session cookie from `your-app.vercel.app` to `your-api.onrender.com`.
    - Some browsers (notably Safari) block third-party cookies. For the most reliable sign-in, serve the web app and the API from subdomains of the same domain (for example `app.example.com` and `api.example.com`).
+=======
+   - The auth routes have been updated to set `SameSite: 'None'` and `Secure: true` when `NODE_ENV=production`.
+   - This ensures the browser sends the authentication cookie across domains (`your-app.vercel.app` -> `your-api.onrender.com`).
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
 3. **Backend Environment Variables**:
    ```env
@@ -76,6 +85,7 @@ To connect your deployed Vercel frontend with the backend API:
    RESEND_FROM_EMAIL=SeatLock <tickets@your-verified-domain.com>
    ```
 
+<<<<<<< HEAD
 4. **Build and start commands** (Render, Railway, Fly.io or a VPS; run from the repository root):
    ```bash
    # Build
@@ -86,6 +96,8 @@ To connect your deployed Vercel frontend with the backend API:
    Or build the Docker image: `docker build -f apps/api/Dockerfile -t seat-lock-api .` (it applies the migrations on start).
    Do **not** run `pnpm db:seed` against a production database; it erases data and refuses to run when `NODE_ENV=production`.
 
+=======
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 ---
 
 ## Step 3: Local Verification
@@ -94,8 +106,15 @@ You can verify the production build locally anytime by running:
 
 ```bash
 # Build the Next.js web application
+<<<<<<< HEAD
 pnpm build:web
 
 # Or build the entire monorepo (shared, API and web)
 pnpm build
+=======
+pnpm run build:web
+
+# Or build the entire monorepo
+pnpm run build
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 ```

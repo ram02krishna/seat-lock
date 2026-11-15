@@ -2,6 +2,21 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@repo/shared'],
+<<<<<<< HEAD
+=======
+  async rewrites() {
+    const proxyTarget = process.env.API_PROXY_URL;
+    if (proxyTarget) {
+      return [
+        {
+          source: '/api/:path*',
+          destination: `${proxyTarget}/api/:path*`,
+        },
+      ];
+    }
+    return [];
+  },
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   async headers() {
     return [
       {

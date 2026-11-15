@@ -14,7 +14,11 @@ export class AppError extends Error {
   }
 }
 
+<<<<<<< HEAD
 export function notFoundHandler(_req: Request, res: Response) {
+=======
+export function notFoundHandler(req: Request, res: Response) {
+>>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   res.status(404).json({ error: 'Route not found' });
 }
 
