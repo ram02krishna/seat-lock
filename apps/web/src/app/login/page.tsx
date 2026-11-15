@@ -268,7 +268,7 @@ function LoginForm() {
                   mode === m ? 'bg-surface text-ink shadow-card' : 'text-ink-3 hover:text-ink'
                 }`}
               >
-                {m === 'login' ? 'Sign in' : 'Register'}
+                {m === 'login' ? 'Sign in' : 'Sign up'}
               </button>
             ))}
           </div>
@@ -303,7 +303,7 @@ function LoginForm() {
             {emailField(true)}
             <PasswordField label="Password (6+ characters)" value={password} onChange={setPassword} autoComplete="new-password" minLength={6} />
             <button type="submit" disabled={isLoading} className="btn btn-primary w-full">
-              {isLoading ? 'Sending code…' : 'Email me a code'}
+              {isLoading ? 'Signing up…' : 'Sign up'}
             </button>
           </form>
         )}
@@ -331,7 +331,7 @@ function LoginForm() {
                 Back to sign in
               </button>
               <button type="button" onClick={() => switchMode('register')} className="text-accent hover:underline">
-                Create account
+                Sign up
               </button>
             </div>
           </form>
