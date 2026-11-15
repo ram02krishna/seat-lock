@@ -2,19 +2,11 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
-<<<<<<< HEAD
 // Load the repository-root .env no matter where the process is started from (dotenv never
 // overrides variables that are already set, so real environment variables always win).
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
 dotenv.config();
-=======
-dotenv.config();
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
-dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(4000),

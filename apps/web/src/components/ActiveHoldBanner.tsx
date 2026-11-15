@@ -10,12 +10,9 @@ import { useCountdown, formatClock } from '@/hooks/useCountdown';
 
 export interface ActiveHoldInfo {
   eventId: string;
-<<<<<<< HEAD
   /** Set for cinema holds: the show the seats were held for. */
   showId?: string | null;
   showStartsAt?: string | null;
-=======
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   eventTitle: string;
   venueName?: string;
   startsAt?: string;
@@ -44,11 +41,7 @@ export function ActiveHoldBanner({ hold, onReleased }: ActiveHoldBannerProps) {
 
   // Keep the persisted cart in step with what the server says we hold, so checkout opens instantly.
   // Keyed on the hold's content, not object identity, because the query refetches on an interval.
-<<<<<<< HEAD
   const holdKey = `${hold.eventId}|${hold.showId ?? ''}|${hold.holdExpiresAt}|${hold.seats.map((s) => s.id).join(',')}`;
-=======
-  const holdKey = `${hold.eventId}|${hold.holdExpiresAt}|${hold.seats.map((s) => s.id).join(',')}`;
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   useEffect(() => {
     if (hold.seats.length === 0) return;
     restoreHold(
@@ -63,11 +56,8 @@ export function ActiveHoldBanner({ hold, onReleased }: ActiveHoldBannerProps) {
         price: s.price,
       })),
       hold.holdExpiresAt,
-<<<<<<< HEAD
       hold.showId ?? undefined,
       hold.showStartsAt ?? undefined,
-=======
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdKey, restoreHold]);
@@ -83,11 +73,7 @@ export function ActiveHoldBanner({ hold, onReleased }: ActiveHoldBannerProps) {
     try {
       await apiFetch(`/api/events/${hold.eventId}/release`, {
         method: 'POST',
-<<<<<<< HEAD
         body: JSON.stringify({ seatIds: hold.seats.map((s) => s.seatId || s.id), showId: hold.showId ?? undefined }),
-=======
-        body: JSON.stringify({ seatIds: hold.seats.map((s) => s.seatId || s.id) }),
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
       });
       clearHold();
       onReleased?.();
@@ -101,10 +87,7 @@ export function ActiveHoldBanner({ hold, onReleased }: ActiveHoldBannerProps) {
   if (remaining === 0) return null;
 
   const urgent = remaining !== null && remaining < 60;
-<<<<<<< HEAD
   const showQuery = hold.showId ? `&showId=${hold.showId}` : '';
-=======
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   const seatLabels = hold.seats.map((s) => `${s.row}${s.number}`).join(', ');
 
   return (
@@ -135,17 +118,10 @@ export function ActiveHoldBanner({ hold, onReleased }: ActiveHoldBannerProps) {
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line/60 pt-2 sm:border-0 sm:pt-0">
-<<<<<<< HEAD
         <Link href={`/checkout?eventId=${hold.eventId}${showQuery}`} className="btn btn-primary btn-sm flex-1 sm:flex-initial">
           Continue to checkout
         </Link>
         <Link href={`/events/${hold.eventId}${hold.showId ? `?showId=${hold.showId}` : ''}`} className="btn btn-secondary btn-sm flex-1 sm:flex-initial">
-=======
-        <Link href={`/checkout?eventId=${hold.eventId}`} className="btn btn-primary btn-sm flex-1 sm:flex-initial">
-          Continue to checkout
-        </Link>
-        <Link href={`/events/${hold.eventId}`} className="btn btn-secondary btn-sm flex-1 sm:flex-initial">
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
           View seats
         </Link>
         <button type="button" onClick={handleRelease} disabled={isReleasing} className="btn btn-ghost btn-sm">

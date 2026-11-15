@@ -1,10 +1,7 @@
-<<<<<<< HEAD
 # Default (`docker compose up -d`): PostgreSQL + Redis only, for running the apps on your machine.
 # Profile "app":  also builds and runs the API and the web app in containers.
 # Profile "seed": one-off job that loads the demo data (see README).
 
-=======
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 services:
   postgres:
     image: postgres:16-alpine
@@ -29,11 +26,7 @@ services:
     container_name: seat_lock_redis
     restart: unless-stopped
     ports:
-<<<<<<< HEAD
       - "${REDIS_PORT:-6379}:6379"
-=======
-      - "6379:6379"
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     volumes:
       - redis_data:/data
     healthcheck:
@@ -43,11 +36,7 @@ services:
       retries: 5
 
   api:
-<<<<<<< HEAD
     profiles: ["app"]
-=======
-    profiles: ["app", "full"]
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -60,18 +49,12 @@ services:
         condition: service_healthy
     environment:
       PORT: 4000
-<<<<<<< HEAD
       # Plain http://localhost stack. NODE_ENV=production would make the API refuse to start
       # (it requires a unique JWT secret, https origins and Resend credentials).
-=======
-      # Local stack over plain http://localhost. NODE_ENV=production would make the API refuse to
-      # start (it requires a unique JWT secret, https origins and Resend credentials).
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
       NODE_ENV: development
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seat_lock?schema=public
       REDIS_URL: redis://redis:6379
       JWT_SECRET: supersecretdevkey1234567890_min32chars
-<<<<<<< HEAD
       CLIENT_URL: http://localhost:${DOCKER_WEB_PORT:-3001}
     ports:
       - "${DOCKER_API_PORT:-4000}:4000"
@@ -84,14 +67,6 @@ services:
 
   web:
     profiles: ["app"]
-=======
-      CLIENT_URL: http://localhost:3000,http://localhost:3001
-    ports:
-      - "${DOCKER_API_PORT:-4000}:4000"
-
-  web:
-    profiles: ["app", "full"]
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -101,7 +76,6 @@ services:
     container_name: seat_lock_web
     restart: unless-stopped
     depends_on:
-<<<<<<< HEAD
       api:
         condition: service_healthy
     ports:
@@ -123,17 +97,6 @@ services:
     working_dir: /app/apps/api
     command: ["node_modules/.bin/tsx", "prisma/seed.ts"]
 
-=======
-      - api
-    environment:
-      PORT: 3000
-      NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://localhost:${DOCKER_API_PORT:-4000}
-      NEXT_PUBLIC_SOCKET_URL: http://localhost:${DOCKER_API_PORT:-4000}
-    ports:
-      - "${DOCKER_WEB_PORT:-3001}:3000"
-
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 volumes:
   postgres_data:
   redis_data:

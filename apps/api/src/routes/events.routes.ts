@@ -13,7 +13,6 @@ export const eventsRouter = Router();
 
 const CACHE_KEY_PUBLISHED_EVENTS = 'cache:events:published';
 
-<<<<<<< HEAD
 type ShowWithSeats = Prisma.ShowGetPayload<{
   include: { eventSeats: { select: { status: true; price: true; holdExpiresAt: true } } };
 }>;
@@ -40,8 +39,6 @@ function withShowStats(shows: ShowWithSeats[], now: Date) {
   });
 }
 
-=======
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 // Public: List all published events (cached with micro-TTL)
 eventsRouter.get('/', async (_req: Request, res: Response, next: NextFunction) => {
   try {
@@ -74,7 +71,6 @@ eventsRouter.get('/', async (_req: Request, res: Response, next: NextFunction) =
     });
 
     // One aggregate query rather than pulling every seat row of every event into memory.
-<<<<<<< HEAD
     // A hold that has lapsed but not yet been swept counts as available. Seats of shows that have
     // already started are left out, so a cinema's counts and "from" price describe what can still be booked.
     const eventIds = events.map((e) => e.id);
@@ -92,22 +88,6 @@ eventsRouter.get('/', async (_req: Request, res: Response, next: NextFunction) =
           WHERE es."eventId" IN (${Prisma.join(eventIds)})
             AND (sh.id IS NULL OR sh."startsAt" > NOW())
           GROUP BY es."eventId"
-=======
-    // A hold that has lapsed but not yet been swept counts as available.
-    const eventIds = events.map((e) => e.id);
-    const stats = eventIds.length
-      ? await prisma.$queryRaw<Array<{ eventId: string; total: bigint; available: bigint; minPrice: number | null }>>`
-          SELECT "eventId",
-                 COUNT(*) AS total,
-                 COUNT(*) FILTER (
-                   WHERE status = 'AVAILABLE'::"SeatStatus"
-                      OR (status = 'HELD'::"SeatStatus" AND "holdExpiresAt" < NOW())
-                 ) AS available,
-                 MIN(price) AS "minPrice"
-          FROM "EventSeat"
-          WHERE "eventId" IN (${Prisma.join(eventIds)})
-          GROUP BY "eventId"
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
         `
       : [];
     const statsByEvent = new Map(stats.map((r) => [r.eventId, r]));
@@ -250,28 +230,7 @@ eventsRouter.get('/:id', async (req: Request, res: Response, next: NextFunction)
     });
 
     const now = new Date();
-<<<<<<< HEAD
     const showsWithStats = withShowStats(shows, now);
-=======
-    const showsWithStats = shows.map((s) => {
-      const total = s.eventSeats.length;
-      const available = s.eventSeats.filter(
-        (es) => es.status === 'AVAILABLE' || (es.status === 'HELD' && es.holdExpiresAt && new Date(es.holdExpiresAt) < now)
-      ).length;
-      const sold = s.eventSeats.filter((es) => es.status === 'SOLD').length;
-      const minPrice = s.eventSeats.length > 0 ? Math.min(...s.eventSeats.map((es) => es.price)) : 0;
-      return {
-        id: s.id,
-        startsAt: s.startsAt,
-        pricing: s.pricing,
-        totalSeats: total,
-        availableSeats: available,
-        soldSeats: sold,
-        soldOut: total > 0 && available === 0,
-        minPrice,
-      };
-    });
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
     res.status(200).json({
       event: {
@@ -311,31 +270,7 @@ eventsRouter.get('/:id/seats', async (req: Request, res: Response, next: NextFun
     });
 
     const now = new Date();
-<<<<<<< HEAD
     const showsWithStats = withShowStats(shows, now);
-=======
-    const showsWithStats = shows.map((s) => {
-      const total = s.eventSeats.length;
-      const available = s.eventSeats.filter(
-        (es) => es.status === 'AVAILABLE' || (es.status === 'HELD' && es.holdExpiresAt && new Date(es.holdExpiresAt) < now)
-      ).length;
-      const sold = s.eventSeats.filter((es) => es.status === 'SOLD').length;
-      const minPrice = s.eventSeats.length > 0 ? Math.min(...s.eventSeats.map((es) => es.price)) : 0;
-      return {
-        id: s.id,
-        startsAt: s.startsAt,
-        pricing: s.pricing,
-        totalSeats: total,
-        availableSeats: available,
-        soldSeats: sold,
-        soldOut: total > 0 && available === 0,
-        minPrice,
-      };
-    });
-
-    // Ensure strict ascending chronological order (earliest show first)
-    showsWithStats.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
     let activeShowId = requestedShowId;
     if (!activeShowId && showsWithStats.length > 0) {
@@ -439,21 +374,9 @@ eventsRouter.post(
         showId,
       });
 
-<<<<<<< HEAD
       // Seats this user held before (this event's other show, or another event) were let go
       for (const group of result.released) {
         broadcastSeatsReleased(group.eventId, { seatIds: group.seatIds, showId: group.showId ?? undefined });
-=======
-      if (result.releasedSeatIds && result.releasedSeatIds.length > 0) {
-        broadcastSeatsReleased(eventId, {
-          seatIds: result.releasedSeatIds,
-          showId,
-        });
-      }
-
-      for (const [otherEventId, otherSeatIds] of Object.entries(result.releasedElsewhere)) {
-        broadcastSeatsReleased(otherEventId, { seatIds: otherSeatIds });
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
       }
 
       redisConnection.del(CACHE_KEY_PUBLISHED_EVENTS).catch(() => null);

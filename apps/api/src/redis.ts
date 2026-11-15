@@ -3,15 +3,7 @@ import RedisMock from 'ioredis-mock';
 import { config } from './config';
 import { logger } from './logger';
 
-<<<<<<< HEAD
 export const isMockRedis = config.REDIS_URL === 'mock' || (!config.REDIS_URL && config.NODE_ENV !== 'production');
-=======
-export const isMockRedis =
-  config.REDIS_URL === 'mock' ||
-  config.REDIS_URL === 'memory' ||
-  process.env.USE_MOCK_REDIS === 'true' ||
-  (!config.REDIS_URL && config.NODE_ENV !== 'production');
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
 function createRedisConnection(): Redis {
   if (isMockRedis) {

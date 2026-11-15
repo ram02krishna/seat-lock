@@ -241,11 +241,7 @@ function CheckoutContent() {
                 Please{' '}
                 <Link
                   className="font-semibold underline"
-<<<<<<< HEAD
                   href={`/login?redirect=${encodeURIComponent(`/checkout?eventId=${eventId}${showId ? `&showId=${showId}` : ''}`)}`}
-=======
-                  href={`/login?redirect=${encodeURIComponent(`/checkout?eventId=${eventId}`)}`}
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
                 >
                   sign in
                 </Link>{' '}

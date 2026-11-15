@@ -8,11 +8,7 @@ on:
 
 jobs:
   build:
-<<<<<<< HEAD
     name: Typecheck, Migrate & Build
-=======
-    name: Lint, Typecheck & Build
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     runs-on: ubuntu-latest
 
     services:
@@ -56,11 +52,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-<<<<<<< HEAD
-=======
-        with:
-          version: 10
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
@@ -71,7 +62,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-<<<<<<< HEAD
       - name: Typecheck monorepo
         run: pnpm typecheck
 
@@ -83,20 +73,6 @@ jobs:
           pnpm db:generate
           pnpm db:deploy
           pnpm db:seed
-=======
-      - name: Run code quality checks (lint)
-        run: pnpm lint
-
-      - name: Typecheck monorepo
-        run: pnpm typecheck
-
-      - name: Setup database schema
-        run: |
-          pnpm --filter api prisma:generate
-          pnpm --filter api prisma db push
-          pnpm --filter api prisma:seed
-
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
       - name: Build packages and production bundles
         run: pnpm build

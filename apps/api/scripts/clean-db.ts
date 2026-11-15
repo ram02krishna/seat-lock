@@ -12,11 +12,7 @@ import Redis from 'ioredis';
 const prisma = new PrismaClient();
 
 async function main() {
-<<<<<<< HEAD
   console.log('Cleaning database data...');
-=======
-  console.log('🧹 Cleaning database data...');
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
   // 1. Delete all Tickets
   const deletedTickets = await prisma.ticket.deleteMany();
@@ -41,7 +37,6 @@ async function main() {
   });
   console.log(`Reset ${updatedSeats.count} event seats back to AVAILABLE (0 held, 0 sold)`);
 
-<<<<<<< HEAD
   // 5. Clear Redis locks and queues (nothing to clear when running with the in-memory mock)
   const redisUrl = process.env.REDIS_URL;
   if (!redisUrl || redisUrl === 'mock') {
@@ -58,16 +53,6 @@ async function main() {
     } finally {
       redis.disconnect();
     }
-=======
-  // 5. Clear Redis locks and queues
-  try {
-    const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
-    await redis.flushall();
-    console.log('Flushed Redis cache and queues');
-    await redis.quit();
-  } catch (err: any) {
-    console.warn('Redis flush warning:', err.message);
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   }
 
   // 6. Summary check

@@ -3,10 +3,6 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useQueryClient } from '@tanstack/react-query';
-<<<<<<< HEAD
-=======
-import { SeatData } from '@/components/seat-map/SeatMap';
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
 const SOCKET_URL = (process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').trim().replace(/\/+$/, '');
 
@@ -60,12 +56,6 @@ export function useEventSocket(eventId: string, currentShowId?: string | null) {
     // Real-time seat updates
     const onSeatsHeld = (data: SeatPayload) => {
       if (data.showId && currentShowId && data.showId !== currentShowId) return;
-<<<<<<< HEAD
-=======
-      // Work out whether this hold is ours, so our own seats never render as "held by someone else"
-      const me = queryClient.getQueryData<{ user?: { id: string } }>(['auth', 'me'])?.user?.id;
-      const mine = !!me && data.heldByUserId === me;
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
       queryClient.invalidateQueries({ queryKey: ['events', eventId, 'seats'] });
     };
 

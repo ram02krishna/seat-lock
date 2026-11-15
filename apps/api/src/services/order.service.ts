@@ -1,9 +1,6 @@
 import crypto from 'crypto';
 import qrcode from 'qrcode';
-<<<<<<< HEAD
 import { Prisma } from '@prisma/client';
-=======
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 import { prisma } from '../db';
 import { AppError } from '../errors';
 import { logger } from '../logger';
@@ -55,11 +52,8 @@ export async function finalizeOrder(orderId: string, seatIds?: string[]) {
     const heldSeats = await tx.eventSeat.findMany({
       where: {
         eventId: order.eventId,
-<<<<<<< HEAD
         // A cinema seat exists once per show; only the show this order was placed for counts.
         ...(order.showId ? { showId: order.showId } : {}),
-=======
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
         heldByUserId: order.userId,
         status: 'HELD',
         holdExpiresAt: { gt: new Date() },
@@ -274,7 +268,6 @@ export async function createAndConfirmBooking(params: {
   const totalCents = heldSeats.reduce((sum, s) => sum + s.price, 0);
 
   // 3. Create PENDING Order
-<<<<<<< HEAD
   let order;
   try {
     order = await prisma.order.create({
@@ -299,18 +292,6 @@ export async function createAndConfirmBooking(params: {
     }
     throw err;
   }
-=======
-  const order = await prisma.order.create({
-    data: {
-      userId,
-      eventId,
-      showId: showId || null,
-      status: 'PENDING',
-      totalCents,
-      idempotencyKey: idempotencyKey || null,
-    },
-  });
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
   // 4. Finalize order (mark SOLD + create tickets). If it can't be completed, close the order so
   //    failed attempts don't pile up as PENDING rows (and the idempotency key can't be replayed).

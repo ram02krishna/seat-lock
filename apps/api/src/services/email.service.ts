@@ -19,7 +19,6 @@ export interface SendTicketsEmailParams {
   }>;
 }
 
-<<<<<<< HEAD
 // Resend's shared sandbox sender; replace it by setting RESEND_FROM_EMAIL to an address on a verified domain.
 const DEFAULT_FROM_EMAIL = 'SeatLock <onboarding@resend.dev>';
 
@@ -38,8 +37,6 @@ function ticketsSender(): string {
   return config.RESEND_TICKETS_FROM_EMAIL || otpSender();
 }
 
-=======
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 const resendApiKey = config.RESEND_API_KEY;
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
@@ -57,13 +54,7 @@ function escapeHtml(value: unknown): string {
 export async function sendTicketConfirmationEmail(params: SendTicketsEmailParams) {
   const { toEmail, orderId, eventTitle, startsAt, venueName, location, tickets } = params;
 
-<<<<<<< HEAD
   const viewTicketsUrl = ticketsUrl();
-=======
-  const viewTicketsUrl =
-    config.CLIENT_TICKETS_URL ||
-    'https://seatlock-event-seat-booking.vercel.app/my-tickets';
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
   const qrBaseUrl =
     config.QR_CODE_API_URL ||
@@ -252,14 +243,7 @@ export async function sendTicketConfirmationEmail(params: SendTicketsEmailParams
 
     const overrideEmail = config.RESEND_OVERRIDE_EMAIL;
     const recipient = overrideEmail || (toEmail.endsWith('@example.com') ? 'delivered@resend.dev' : toEmail);
-<<<<<<< HEAD
     const fromEmail = ticketsSender();
-=======
-    const fromEmail =
-      config.RESEND_TICKETS_FROM_EMAIL ||
-      config.RESEND_FROM_EMAIL ||
-      'SeatLock <security@ram02krishna.me>';
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
     // Notice: No file attachments are passed so that email clients (e.g. Gmail) don't display
     // attachment download bars or scan notices, and the QR code renders cleanly inline via URL.
@@ -392,11 +376,7 @@ export async function sendOtpEmail(params: SendOtpEmailParams): Promise<SendEmai
   try {
     const overrideEmail = config.RESEND_OVERRIDE_EMAIL;
     const recipient = overrideEmail || (toEmail.endsWith('@example.com') ? 'delivered@resend.dev' : toEmail);
-<<<<<<< HEAD
     const fromEmail = otpSender();
-=======
-    const fromEmail = config.RESEND_FROM_EMAIL || 'SeatLock <security@ram02krishna.me>';
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 
     const result = await resend.emails.send({
       from: fromEmail,
@@ -443,12 +423,7 @@ export interface SendEventUpdatedEmailParams {
 /** Tells ticket holders that the date or place of an event they booked has changed. */
 export async function sendEventUpdatedEmail(params: SendEventUpdatedEmailParams) {
   const { toEmail, eventTitle, startsAt, venueName, location, changes } = params;
-<<<<<<< HEAD
   const viewTicketsUrl = ticketsUrl();
-=======
-  const viewTicketsUrl =
-    config.CLIENT_TICKETS_URL || 'https://seatlock-event-seat-booking.vercel.app/my-tickets';
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   const formattedDate = new Date(startsAt).toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
@@ -492,12 +467,7 @@ export async function sendEventUpdatedEmail(params: SendEventUpdatedEmailParams)
     }
     const overrideEmail = config.RESEND_OVERRIDE_EMAIL;
     const recipient = overrideEmail || (toEmail.endsWith('@example.com') ? 'delivered@resend.dev' : toEmail);
-<<<<<<< HEAD
     const fromEmail = ticketsSender();
-=======
-    const fromEmail =
-      config.RESEND_TICKETS_FROM_EMAIL || config.RESEND_FROM_EMAIL || 'SeatLock <security@ram02krishna.me>';
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     const result = await resend.emails.send({
       from: fromEmail,
       to: recipient,

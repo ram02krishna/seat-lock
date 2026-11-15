@@ -23,11 +23,7 @@ export const viewport: Viewport = {
 const themeInit = `
 (function () {
   try {
-<<<<<<< HEAD
     var stored = localStorage.getItem('app-theme');
-=======
-    var stored = localStorage.getItem('app-theme') || localStorage.getItem('seatlock-theme');
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
     document.documentElement.classList.toggle('dark', dark);
   } catch (e) {}

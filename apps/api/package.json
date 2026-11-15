@@ -10,7 +10,6 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "check:layout": "tsx scripts/check-seat-layout.ts",
-<<<<<<< HEAD
     "prisma:generate": "dotenv -e ../../.env -e .env -- prisma generate",
     "prisma:migrate": "dotenv -e ../../.env -e .env -- prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
@@ -18,18 +17,6 @@
     "prisma:studio": "dotenv -e ../../.env -e .env -- prisma studio",
     "db:clean": "tsx scripts/clean-db.ts",
     "prisma:deploy": "dotenv -e ../../.env -e .env -- prisma migrate deploy"
-=======
-    "lint": "echo \"No lint config for api yet\"",
-    "prisma:dev": "dotenv -e ../../.env -e .env -- prisma dev",
-    "prisma:generate": "dotenv -e ../../.env -e .env -- prisma generate",
-    "prisma:migrate": "dotenv -e ../../.env -e .env -- prisma migrate dev",
-    "prisma:seed": "tsx prisma/seed.ts",
-    "seed": "tsx prisma/seed.ts",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:push": "dotenv -e ../../.env -e .env -- prisma db push",
-    "prisma:studio": "dotenv -e ../../.env -e .env -- prisma studio",
-    "db:clean": "tsx scripts/clean-db.ts"
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",

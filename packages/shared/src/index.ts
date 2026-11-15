@@ -1,17 +1,5 @@
 import { z } from 'zod';
 
-<<<<<<< HEAD
-=======
-export const UserRoleSchema = z.enum(['CUSTOMER', 'ORGANIZER', 'STAFF']);
-export type UserRole = z.infer<typeof UserRoleSchema>;
-
-export const SeatStatusSchema = z.enum(['AVAILABLE', 'HELD', 'SOLD']);
-export type SeatStatus = z.infer<typeof SeatStatusSchema>;
-
-export const OrderStatusSchema = z.enum(['PENDING', 'CONFIRMED', 'EXPIRED', 'CANCELLED']);
-export type OrderStatus = z.infer<typeof OrderStatusSchema>;
-
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 export interface HealthResponse {
   status: 'ok' | 'error' | 'degraded';
   uptime: number;
@@ -57,15 +45,6 @@ export const ResetPasswordSchema = z.object({
 });
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;
 
-<<<<<<< HEAD
-=======
-export interface AuthUser {
-  id: string;
-  email: string;
-  role: UserRole;
-}
-
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 export const VenueTypeEnum = z.enum([
   'THEATER_DOLBY',
   'CONFERENCE_HALL',
@@ -75,35 +54,7 @@ export const VenueTypeEnum = z.enum([
 ]);
 export type VenueType = z.infer<typeof VenueTypeEnum>;
 
-<<<<<<< HEAD
 // Organizer / Event schemas
-=======
-// Organizer / Venue / Event schemas
-export const CreateVenueSchema = z.object({
-  name: z.string().min(2, 'Venue name is required'),
-  layout: z.record(z.any()).optional(),
-  venueType: VenueTypeEnum.optional(),
-});
-export type CreateVenueInput = z.infer<typeof CreateVenueSchema>;
-
-export const GenerateSeatsSchema = z.object({
-  sections: z.array(
-    z.object({
-      name: z.string(),
-      tier: z.string(),
-      rows: z.array(z.string()).min(1).max(100),
-      seatsPerRow: z.number().int().positive().max(200),
-      startY: z.number(),
-      rowSpacing: z.number().default(50),
-      startX: z.number(),
-      seatSpacing: z.number().default(50),
-      defaultPriceCents: z.number().int().positive(),
-    })
-  ),
-});
-export type GenerateSeatsInput = z.infer<typeof GenerateSeatsSchema>;
-
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 // ---- Event capacity / seating limits -------------------------------------------------------
 export const MAX_SEATS_PER_EVENT = 2000;
 export const MAX_SEATS_PER_ROW = 50;
@@ -178,11 +129,6 @@ export type UpdateShowInput = z.infer<typeof UpdateShowSchema>;
 
 export const CreateEventSchema = z
   .object({
-<<<<<<< HEAD
-=======
-    /** @deprecated Seats are now generated per event from `totalSeats`; kept so old clients still validate. */
-    venueId: z.string().optional(),
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     venueName: z.string().trim().max(150).optional(),
     venueType: VenueTypeEnum.optional().default('THEATER_DOLBY'),
     category: z.string().trim().max(50).optional(),

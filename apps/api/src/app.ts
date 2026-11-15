@@ -11,10 +11,6 @@ import { eventsRouter } from './routes/events.routes';
 import { organizerRouter } from './routes/organizer.routes';
 import { ordersRouter } from './routes/orders.routes';
 import { ticketsRouter } from './routes/tickets.routes';
-<<<<<<< HEAD
-=======
-
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
 import { isOriginAllowed } from './cors';
 import { prisma } from './db';
 import { redisConnection } from './redis';
@@ -72,11 +68,7 @@ app.get('/health', async (req, res) => {
   }
 
   const isHealthy = dbStatus === 'ok' && redisStatus === 'ok';
-<<<<<<< HEAD
   const data: HealthResponse = {
-=======
-  const data: HealthResponse & { db?: string; redis?: string } = {
->>>>>>> 29c6a8c475027e98c9e22fa571b04319ac6898f7
     status: isHealthy ? 'ok' : 'error',
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
