@@ -13,7 +13,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   CLIENT_URL: z.string().default('http://localhost:3000'),
   DATABASE_URL: z.string().optional(),
-  REDIS_URL: z.string().optional(),
+  REDIS_URL: z.string().default('redis://localhost:6379'),
   JWT_SECRET: z.string().default('supersecretdevkey1234567890_min32chars'),
   ORGANIZER_EMAIL: z.string().email().default('organizer@eventseat.com'),
   ORGANIZER_PASSWORD: z.string().default('password123'),

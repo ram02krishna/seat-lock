@@ -97,7 +97,7 @@ if (updatedRows.length !== sortedIds.length) {
 
 ### 4. Hold expiry: BullMQ + a database sweeper
 - After a hold, a delayed BullMQ job (5 minutes) is queued. If the seats are still held and expired when it runs, they go back to `AVAILABLE` and a `seats:released` Socket.IO event updates every open seat map.
-- A 60-second periodic job runs the same conditional release for any expired hold the worker missed (for example after a restart). With `REDIS_URL=mock` only this sweeper runs.
+- A 60-second periodic job runs the same conditional release for any expired hold the worker missed (for example after a restart).
 - The database is the source of truth: every query treats an expired hold as available, even before it is swept.
 
 ### 5. Idempotent checkout
@@ -178,9 +178,9 @@ seat-lock/
 
 Pick one of the three setups. All of them end with the app at **http://localhost:3000** (or **:3001** for the full Docker stack).
 
-### Option 1 - Without Docker
+### Option 1 - Local or Cloud Services
 
-You need a PostgreSQL database. Redis is optional (an in-memory mock is built in).
+You need a PostgreSQL database and a Redis instance (e.g. running via Docker, or cloud providers such as Neon PostgreSQL and Upstash Redis).
 
 ```bash
 git clone https://github.com/ram02krishna/seat-lock.git
@@ -191,10 +191,9 @@ cp .env.example .env
 
 Edit `.env` and set:
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/seat_lock?schema=public   # your PostgreSQL
-REDIS_URL=mock                                                                        # no Redis needed
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/seat_lock?schema=public   # or Neon connection string
+REDIS_URL=redis://localhost:6379                                                     # or Upstash rediss:// string
 ```
-(A free cloud PostgreSQL such as Neon or Supabase works too; use its connection string.)
 
 Create the database, create the tables, load the demo data and start everything:
 ```bash
@@ -278,7 +277,7 @@ The full list with comments is in [`.env.example`](./.env.example). The ones you
 | Variable | Used by | Purpose |
 |---|---|---|
 | `DATABASE_URL` | API, Prisma | PostgreSQL connection string (required) |
-| `REDIS_URL` | API | Redis URL, or `mock` for an in-memory Redis (development only) |
+| `REDIS_URL` | API | Redis URL (`redis://localhost:6379` for local Docker or `rediss://...` for Upstash) |
 | `JWT_SECRET` | API | Session signing key; must be unique and 32+ characters in production |
 | `CLIENT_URL` | API | Comma-separated exact frontend origins allowed by CORS |
 | `ORGANIZER_EMAIL`, `ORGANIZER_PASSWORD` | API | Organizer account created on first start |

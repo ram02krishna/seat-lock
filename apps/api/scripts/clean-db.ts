@@ -37,22 +37,17 @@ async function main() {
   });
   console.log(`Reset ${updatedSeats.count} event seats back to AVAILABLE (0 held, 0 sold)`);
 
-  // 5. Clear Redis locks and queues (nothing to clear when running with the in-memory mock)
-  const redisUrl = process.env.REDIS_URL;
-  if (!redisUrl || redisUrl === 'mock') {
-    console.log('Skipped Redis flush (REDIS_URL is not set to a real Redis server)');
-  } else {
-    // Fail fast instead of retrying forever when Redis is unreachable
-    const redis = new Redis(redisUrl, { maxRetriesPerRequest: 1, connectTimeout: 3000, retryStrategy: () => null });
-    redis.on('error', () => {});
-    try {
-      await redis.flushall();
-      console.log('Flushed Redis cache and queues');
-    } catch (err: any) {
-      console.warn('Redis flush warning:', err.message);
-    } finally {
-      redis.disconnect();
-    }
+  // 5. Clear Redis locks and queues
+  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+  const redis = new Redis(redisUrl, { maxRetriesPerRequest: 1, connectTimeout: 3000, retryStrategy: () => null });
+  redis.on('error', () => {});
+  try {
+    await redis.flushall();
+    console.log('Flushed Redis cache and queues');
+  } catch (err: any) {
+    console.warn('Redis flush warning:', err.message);
+  } finally {
+    redis.disconnect();
   }
 
   // 6. Summary check

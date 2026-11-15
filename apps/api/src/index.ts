@@ -5,7 +5,7 @@ import { logger } from './logger';
 import { initSocket } from './socket';
 import { startHoldExpiryWorker } from './jobs/holdExpiry.worker';
 import { startPeriodicCleanup } from './jobs/cleanup.job';
-import { redisConnection, isMockRedis } from './redis';
+import { redisConnection } from './redis';
 import { ensureDefaultOrganizer } from './services/organizerInit.service';
 import { prisma } from './db';
 
@@ -14,16 +14,12 @@ const server = http.createServer(app);
 // Initialize Socket.IO
 const io = initSocket(server);
 
-// Start BullMQ worker (when running with live Redis) & periodic DB cleanup
+// Start BullMQ worker & periodic DB cleanup
 let worker: ReturnType<typeof startHoldExpiryWorker> | null = null;
-if (!isMockRedis) {
-  try {
-    worker = startHoldExpiryWorker();
-  } catch (err: any) {
-    logger.warn('BullMQ worker disabled (periodic DB cleanup will handle hold release)');
-  }
-} else {
-  logger.info('Running with mock Redis: BullMQ worker bypassed, periodic DB cleanup will release expired holds');
+try {
+  worker = startHoldExpiryWorker();
+} catch (err: any) {
+  logger.warn('BullMQ worker disabled (periodic DB cleanup will handle hold release)');
 }
 const stopCleanup = startPeriodicCleanup(60000);
 
