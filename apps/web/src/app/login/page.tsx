@@ -86,7 +86,11 @@ function LoginForm() {
   const redirectTo = safeRedirect(searchParams.get('redirect'));
   const queryClient = useQueryClient();
 
-  const [mode, setMode] = useState<AuthMode>('login');
+  const initialMode: AuthMode =
+    searchParams.get('mode') === 'register' || searchParams.get('mode') === 'signup'
+      ? 'register'
+      : 'login';
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');

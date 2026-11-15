@@ -127,9 +127,14 @@ export function Navbar() {
               </button>
             </>
           ) : (
-            <Link href="/login" className="btn btn-primary btn-sm min-h-[36px] px-3.5">
-              Sign in
-            </Link>
+            <div className="flex items-center gap-1.5">
+              <Link href="/login" className="btn btn-ghost btn-sm min-h-[36px] px-3 text-[13px]">
+                Sign in
+              </Link>
+              <Link href="/login?mode=signup" className="btn btn-primary btn-sm min-h-[36px] px-3 text-[13px]">
+                Sign up
+              </Link>
+            </div>
           )}
         </div>
       </div>
