@@ -25,6 +25,7 @@ async function main() {
   await prisma.order.deleteMany();
   await prisma.eventSeat.deleteMany();
   await prisma.seat.deleteMany();
+  await prisma.show.deleteMany();
   await prisma.event.deleteMany();
   await prisma.venue.deleteMany();
   await prisma.user.deleteMany();

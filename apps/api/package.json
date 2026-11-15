@@ -16,6 +16,7 @@
     "db:push": "dotenv -e ../../.env -e .env -- prisma db push",
     "prisma:studio": "dotenv -e ../../.env -e .env -- prisma studio",
     "db:clean": "tsx scripts/clean-db.ts",
+    "db:reset": "tsx scripts/reset-neon-db.ts",
     "prisma:deploy": "dotenv -e ../../.env -e .env -- prisma migrate deploy"
   },
   "dependencies": {

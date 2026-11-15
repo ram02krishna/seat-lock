@@ -19,6 +19,7 @@
     "db:deploy": "pnpm --filter api prisma:deploy",
     "db:seed": "pnpm --filter api prisma:seed",
     "db:clean": "pnpm --filter api db:clean",
+    "db:reset": "pnpm --filter api db:reset",
     "db:studio": "pnpm --filter api prisma:studio",
     "docker:infra": "docker compose up -d",
     "docker:full": "docker compose --profile app up -d --build",
